@@ -630,6 +630,8 @@ local spoofEnabled = false
 local fakeName = ""
 local fakeSquad = ""
 local spoofConn = nil
+local plNameLabel = nil      -- cached CoreGui PlayerList label
+local plNameConn  = nil      -- changed signal connection
 
 local spoofHeader = mkSL(6, 16, "USERNAME SPOOFER", Color3.fromRGB(200,160,255), true)
 local spoofStatusLbl = mkSL(26, 18, "Status: off", Color3.fromRGB(150,150,150))
@@ -697,15 +699,6 @@ local function applySpoof(refs)
     if refs.memberRows   then for _, row in ipairs(refs.memberRows) do row.label.Text = row.fake end end
     if refs.overheadName then refs.overheadName.Text = fakeName end
     if refs.overheadGang then refs.overheadGang.Text = "[Member] " .. fakeSquad end
-    -- spoof CoreGui playerlist (React re-renders so scan every heartbeat)
-    local pl = game:GetService("CoreGui"):FindFirstChild("PlayerList")
-    if pl then
-        for _, v in ipairs(pl:GetDescendants()) do
-            if v:IsA("TextLabel") and v.Name == "PlayerName" and v.Text == LP.Name then
-                v.Text = fakeName
-            end
-        end
-    end
 end
 
 local function revertSpoof(refs)
@@ -719,8 +712,11 @@ local function revertSpoof(refs)
     if refs.memberRows   then for _, row in ipairs(refs.memberRows) do row.label.Text = row.original end end
     if refs.overheadName then refs.overheadName.Text = LP.Name end
     if refs.overheadGang then refs.overheadGang.Text = "[Member] ApexKnight" end
+    -- revert CoreGui playerlist label
+    if plNameLabel and plNameLabel.Parent then plNameLabel.Text = LP.DisplayName end
+    if plNameConn then plNameConn:Disconnect(); plNameConn = nil end
+    plNameLabel = nil
 end
-
 local function refreshSpoofUI()
     if spoofEnabled then
         spoofToggle.Text = "🟢  Spoofer ON"
@@ -744,6 +740,21 @@ spoofToggle.MouseButton1Click:Connect(function()
         fakeSquad = randName(5, 10)
         spoofRefs = buildSpoofRefs()
         applySpoof(spoofRefs)
+        -- find and hook CoreGui playerlist label (display name, event-driven only)
+        local pl = game:GetService("CoreGui"):FindFirstChild("PlayerList")
+        if pl then
+            for _, v in ipairs(pl:GetDescendants()) do
+                if v:IsA("TextLabel") and v.Name == "PlayerName" and v.Text == LP.DisplayName then
+                    plNameLabel = v
+                    v.Text = fakeName
+                    if plNameConn then plNameConn:Disconnect() end
+                    plNameConn = v:GetPropertyChangedSignal("Text"):Connect(function()
+                        if spoofEnabled and v.Text ~= fakeName then v.Text = fakeName end
+                    end)
+                    break
+                end
+            end
+        end
         if spoofConn then spoofConn:Disconnect() end
         spoofConn = game:GetService("RunService").Heartbeat:Connect(function()
             applySpoof(spoofRefs)
