@@ -143,7 +143,18 @@ local trainerConfig = {
 }
 
 local function getAreaLandCFrame(a)
-    return a.cf * CFrame.new(0, a.halfY + 3, 0)
+    -- Land just inside the top surface of the part using local space.
+    -- halfY - 1 keeps us inside the hitbox bounds (avoids the +3 overshoot bug).
+    return a.part.CFrame * CFrame.new(0, a.halfY - 1, 0)
+end
+
+-- Returns true if the player is inside the training area part (proper OBB check)
+local function isInsideArea(pos, a)
+    local localPos = a.part.CFrame:PointToObjectSpace(pos)
+    local half = a.part.Size / 2
+    return math.abs(localPos.X) <= half.X
+        and math.abs(localPos.Y) <= half.Y
+        and math.abs(localPos.Z) <= half.Z
 end
 
 local function getBestArea(areas, statVal)
@@ -334,7 +345,9 @@ local function hookCharacter(char)
         if _G.ARTeleportBack and newCRP then
             task.wait(0.05)
             if _G.activeTrainArea then
-                newCRP.CFrame=getAreaLandCFrame(_G.activeTrainArea)
+                if not isInsideArea(newCRP.Position, _G.activeTrainArea) then
+                    newCRP.CFrame = getAreaLandCFrame(_G.activeTrainArea)
+                end
             elseif lastDeathCFrame then
                 newCRP.CFrame=lastDeathCFrame*CFrame.new(0,3,0)
             end
@@ -894,8 +907,11 @@ task.spawn(function()
         -- switch area if trainer changed or better area available
         if bestArea and (activeArea~=bestArea or activeKey~=key) then
             activeArea=bestArea; activeKey=key; _G.activeTrainArea=activeArea
-            stLbl.Text="Status: teleporting to "..activeArea.name; stLbl.TextColor3=Color3.fromRGB(255,200,50)
-            crp.CFrame=getAreaLandCFrame(activeArea)
+            -- Only teleport if not already inside the new area
+            if not isInsideArea(crp.Position, activeArea) then
+                stLbl.Text="Status: teleporting to "..activeArea.name; stLbl.TextColor3=Color3.fromRGB(255,200,50)
+                crp.CFrame = getAreaLandCFrame(activeArea)
+            end
         end
 
         if not activeArea then
@@ -903,9 +919,10 @@ task.spawn(function()
             stLbl.Text="Status: stat too low for any zone"; stLbl.TextColor3=dz; continue
         end
 
-        -- return if drifted
-        local dist=(crp.Position-activeArea.pos).Magnitude
-        if dist>20 then crp.CFrame=getAreaLandCFrame(activeArea) end
+        -- Only teleport back if we are genuinely outside the hitbox
+        if not isInsideArea(crp.Position, activeArea) then
+            crp.CFrame = getAreaLandCFrame(activeArea)
+        end
 
         areaLbl.Text=string.format("Trainer: %s → %s",key,activeArea.name); areaLbl.TextColor3=cfg.color
         if key ~= "BT" then
@@ -958,5 +975,3 @@ warn("[AG] Ready — BT:"..#btAreas.." FS:"..#fsAreas.." PS:"..#psAreas.." zones
 warn("[AutoRespawn] Active")
 warn("[LineShotNuker] Ready")
 warn("[FusionTracker] Active")
-
-
