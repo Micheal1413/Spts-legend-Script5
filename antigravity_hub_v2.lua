@@ -72,15 +72,25 @@ end
 
 -- FUSION
 local fusionTiers = {
-    {name="Yeti",    req=1e18},{name="Werewolf",req=1e24},
-    {name="Gryphon", req=1e30},{name="Phoenix", req=1e38},
-    {name="Reaper",  req=1e44},{name="Omega",   req=1e48},
+    {name="Yeti",    req=1e18},
+    {name="Werewolf",req=1e24},
+    {name="Gryphon", req=1e30},
+    {name="Phoenix", req=1e38},
+    {name="Reaper",  req=1e44},
+    {name="Omega",   req=1e48},
 }
 local fusionSamples = {}
 local FUSION_WINDOW = 300
+local lastFusionTier = tonumber(LP:GetAttribute("FusionTier") or 0)
 
 local function recordFusion(tp)
     local now = tick()
+    -- wipe samples on rebirth so stale pre-rebirth TP doesnt corrupt rate/ETA
+    local curTier = tonumber(LP:GetAttribute("FusionTier") or 0)
+    if curTier ~= lastFusionTier then
+        fusionSamples = {}
+        lastFusionTier = curTier
+    end
     table.insert(fusionSamples, {t=now, v=tp})
     while fusionSamples[1] and (now-fusionSamples[1].t) > FUSION_WINDOW do table.remove(fusionSamples,1) end
 end
@@ -99,12 +109,12 @@ local function fmtETALong(secs)
     if d > 0 then return string.format("~%dd %dh", d, h) end
     if h > 0 then return string.format("~%dh %dm", h, m) end
     if m > 0 then return string.format("~%dm", m) end
-    return "< 1m"
+    local s=math.floor(secs%60); return string.format("~%dm %ds",m,s)
 end
 
-local function getNextFusionTier(tp)
-    for _, t in ipairs(fusionTiers) do if tp < t.req then return t end end
-    return nil
+local function getNextFusionTier()
+    local tier = tonumber(LP:GetAttribute("FusionTier") or 0)
+    return fusionTiers[tier + 1]
 end
 
 -- LOAD TRAINING AREAS
@@ -837,7 +847,7 @@ task.spawn(function()
         -- fusion tracker
         local tp=tonumber(LP:GetAttribute("TotalPower")) or 0
         local fusionName=tostring(LP:GetAttribute("FusionName") or "?")
-        local nextTier=getNextFusionTier(tp); recordFusion(tp); local fusRate2=getFusionRate()
+        local nextTier=getNextFusionTier(); recordFusion(tp); local fusRate2=getFusionRate()
         if nextTier then
             local req=nextTier.req; local remaining=math.max(0,req-tp)
             local pct=math.min(100,(tp/req)*100); local etaSecs=fusRate2>0 and (remaining/fusRate2) or math.huge
