@@ -697,6 +697,15 @@ local function applySpoof(refs)
     if refs.memberRows   then for _, row in ipairs(refs.memberRows) do row.label.Text = row.fake end end
     if refs.overheadName then refs.overheadName.Text = fakeName end
     if refs.overheadGang then refs.overheadGang.Text = "[Member] " .. fakeSquad end
+    -- spoof CoreGui playerlist (React re-renders so scan every heartbeat)
+    local pl = game:GetService("CoreGui"):FindFirstChild("PlayerList")
+    if pl then
+        for _, v in ipairs(pl:GetDescendants()) do
+            if v:IsA("TextLabel") and v.Name == "PlayerName" and v.Text == LP.Name then
+                v.Text = fakeName
+            end
+        end
+    end
 end
 
 local function revertSpoof(refs)
