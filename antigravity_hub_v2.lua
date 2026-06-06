@@ -189,40 +189,17 @@ local hoverHeight    = 15
 local behindDist     = 30
 local maxClusterDist = 200
 local nukerRunning   = false
+local teleportMode   = true
+local antiIdle       = true
+local autoSkipWeak   = true
+local priorityMode   = true
 
+local tokenPriority  = {"Robot","Sath","WereWolf","Mafia","Thug","Noob"}
+local tokenValues    = {Robot=1e12,Sath=1e6,WereWolf=500000,Mafia=200000,Thug=10000,Noob=1000}
+local trackable      = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=true,Sath=true}
+local enabledTargets = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=false,Sath=true}
 -- SETTINGS PERSISTENCE
 local SETTINGS_FILE = "ag_hub_settings.json"
-local function saveSettings()
-    local t = {
-        activeTrainer  = _G.ActiveTrainer,
-        autoRespawn    = _G.AutoRespawnEnabled,
-        arTeleportBack = _G.ARTeleportBack,
-        autoQuest      = _G.AutoQuestEnabled,
-        teleportMode   = teleportMode,
-        antiIdle       = antiIdle,
-        autoSkipWeak   = autoSkipWeak,
-        priorityMode   = priorityMode,
-        enabledTargets = enabledTargets,
-    }
-    local at = t.activeTrainer and ('"' .. t.activeTrainer .. '"') or "null"
-    local et = t.enabledTargets
-    local json = '{"activeTrainer":' .. at
-        .. ',"autoRespawn":' .. tostring(t.autoRespawn)
-        .. ',"arTeleportBack":' .. tostring(t.arTeleportBack)
-        .. ',"autoQuest":' .. tostring(t.autoQuest)
-        .. ',"teleportMode":' .. tostring(t.teleportMode)
-        .. ',"antiIdle":' .. tostring(t.antiIdle)
-        .. ',"autoSkipWeak":' .. tostring(t.autoSkipWeak)
-        .. ',"priorityMode":' .. tostring(t.priorityMode)
-        .. ',"Noob":' .. tostring(et.Noob)
-        .. ',"Thug":' .. tostring(et.Thug)
-        .. ',"Mafia":' .. tostring(et.Mafia)
-        .. ',"WereWolf":' .. tostring(et.WereWolf)
-        .. ',"Robot":' .. tostring(et.Robot)
-        .. ',"Sath":' .. tostring(et.Sath)
-        .. '}'
-    pcall(function() writefile(SETTINGS_FILE, json) end)
-end
 local function lB(s, key, def)
     local v = s:match('"' .. key .. '":(%a+)')
     if v == "true" then return true elseif v == "false" then return false end
@@ -245,15 +222,31 @@ if _sv then
     enabledTargets.Robot    = lB(_sv, "Robot",    false)
     enabledTargets.Sath     = lB(_sv, "Sath",     true)
 end
-local teleportMode = _sv and lB(_sv, "teleportMode", true)  or true
-local antiIdle     = _sv and lB(_sv, "antiIdle",     true)  or true
-local autoSkipWeak = _sv and lB(_sv, "autoSkipWeak", true)  or true
-local priorityMode = _sv and lB(_sv, "priorityMode", true)  or true
-
-local tokenPriority  = {"Robot","Sath","WereWolf","Mafia","Thug","Noob"}
-local tokenValues    = {Robot=1e12,Sath=1e6,WereWolf=500000,Mafia=200000,Thug=10000,Noob=1000}
-local trackable      = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=true,Sath=true}
-local enabledTargets = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=false,Sath=true}
+local teleportMode = (_sv and lB(_sv, "teleportMode", true)) or true
+local antiIdle     = (_sv and lB(_sv, "antiIdle",     true)) or true
+local autoSkipWeak = (_sv and lB(_sv, "autoSkipWeak", true)) or true
+local priorityMode = (_sv and lB(_sv, "priorityMode", true)) or true
+local function saveSettings()
+    local at = _G.ActiveTrainer and ('"' .. _G.ActiveTrainer .. '"') or "null"
+    local et = enabledTargets
+    local json = "{"
+        .. ""activeTrainer":" .. at
+        .. ","autoRespawn":" .. tostring(_G.AutoRespawnEnabled)
+        .. ","arTeleportBack":" .. tostring(_G.ARTeleportBack)
+        .. ","autoQuest":" .. tostring(_G.AutoQuestEnabled)
+        .. ","teleportMode":" .. tostring(teleportMode)
+        .. ","antiIdle":" .. tostring(antiIdle)
+        .. ","autoSkipWeak":" .. tostring(autoSkipWeak)
+        .. ","priorityMode":" .. tostring(priorityMode)
+        .. ","Noob":" .. tostring(et.Noob)
+        .. ","Thug":" .. tostring(et.Thug)
+        .. ","Mafia":" .. tostring(et.Mafia)
+        .. ","WereWolf":" .. tostring(et.WereWolf)
+        .. ","Robot":" .. tostring(et.Robot)
+        .. ","Sath":" .. tostring(et.Sath)
+        .. "}"
+    pcall(function() writefile(SETTINGS_FILE, json) end)
+end
 
 local character = LP.Character or LP.CharacterAdded:Wait()
 local hrp       = character:WaitForChild("HumanoidRootPart")
