@@ -80,12 +80,6 @@ local fusionTiers = {
     {name="Omega",   req=1e48},
     {name="Zenith",  req=1e52},
     {name="Paragon", req=5e54},
-},
-    {name="Werewolf",req=1e24},
-    {name="Gryphon", req=1e30},
-    {name="Phoenix", req=1e38},
-    {name="Reaper",  req=1e44},
-    {name="Omega",   req=1e48},
 }
 local fusionSamples = {}
 local FUSION_WINDOW = 300
@@ -1083,3 +1077,6 @@ warn("[AG] Ready — BT:"..#btAreas.." FS:"..#fsAreas.." PS:"..#psAreas.." zones
 warn("[AutoRespawn] Active")
 warn("[LineShotNuker] Ready")
 warn("[FusionTracker] Active")
+
+
+
