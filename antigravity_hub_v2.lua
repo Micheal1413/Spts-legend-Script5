@@ -209,7 +209,7 @@ local function lS(s, key)
     return s:match('"' .. key .. '":"([^"]+)"')
 end
 local _sv = nil
-pcall(function() local r = readfile(SETTINGS_FILE) if r and #r > 2 then _sv = r end end)
+pcall(function() if readfile then local r = readfile(SETTINGS_FILE) if r and #r > 2 then _sv = r end end end)
 if _sv then
     _G.ActiveTrainer      = lS(_sv, "activeTrainer")
     _G.AutoRespawnEnabled = lB(_sv, "autoRespawn",    true)
@@ -245,7 +245,7 @@ local function saveSettings()
         .. ","Robot":" .. tostring(et.Robot)
         .. ","Sath":" .. tostring(et.Sath)
         .. "}"
-    pcall(function() writefile(SETTINGS_FILE, json) end)
+    pcall(function() if writefile then writefile(SETTINGS_FILE, json) end end)
 end
 
 local character = LP.Character or LP.CharacterAdded:Wait()
