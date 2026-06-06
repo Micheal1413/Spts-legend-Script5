@@ -1,4 +1,4 @@
-﻿-- cleanup old GUIs
+-- cleanup old GUIs
 for _, v in ipairs(game:GetService("CoreGui"):GetChildren()) do
     if v.Name == "AntigravityHubGui" or v.Name == "LineShotUI" or v.Name == "CombinedHubGui" then v:Destroy() end
 end
@@ -29,7 +29,8 @@ _G.ARTeleportBack     = true
 _G.AutoQuestEnabled   = true
 if _G.hubKillFlag then _G.hubKillFlag() end
 local hubAlive = true
-_G.hubKillFlag = function() hubAlive = false end
+_G.nukerRunning = false
+_G.hubKillFlag = function() hubAlive = false; _G.nukerRunning = false end
 
 local lastDeathCFrame = nil
 local dtDivisor       = 20
@@ -227,10 +228,12 @@ if _sv then
     enabledTargets.Sath     = lB(_sv, "Sath",     true)
     enabledTargets.Phantom  = lB(_sv, "Phantom",  true)
 end
-teleportMode = (_sv and lB(_sv, "teleportMode", true)) or true
-antiIdle     = (_sv and lB(_sv, "antiIdle",     true)) or true
-autoSkipWeak = (_sv and lB(_sv, "autoSkipWeak", true)) or true
-priorityMode = (_sv and lB(_sv, "priorityMode", true)) or true
+if _sv then
+    teleportMode = lB(_sv, "teleportMode", true)
+    antiIdle     = lB(_sv, "antiIdle",     true)
+    autoSkipWeak = lB(_sv, "autoSkipWeak", true)
+    priorityMode = lB(_sv, "priorityMode", true)
+end
 local function saveSettings()
     local at = _G.ActiveTrainer and ('"' .. _G.ActiveTrainer .. '"') or "null"
     local et = enabledTargets
@@ -885,12 +888,12 @@ titleBar.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.M
 
 -- NUKER LOOP
 startBtn.MouseButton1Click:Connect(function()
-    nukerRunning=not nukerRunning
+    nukerRunning=not nukerRunning; _G.nukerRunning=nukerRunning
     if nukerRunning then
         startBtn.Text="■  Stop"; TweenService:Create(startBtn,TweenInfo.new(0.2),{BackgroundColor3=Color3.fromRGB(200,50,50)}):Play()
         statusLabel.Text="🔍 Searching..."; statusLabel.TextColor3=Color3.fromRGB(255,200,50)
         task.spawn(function()
-            while nukerRunning and hubAlive do
+            while nukerRunning and hubAlive and _G.nukerRunning do
                 if not character or not hrp or not hrp.Parent then statusLabel.Text="⏳ Waiting for character..."; task.wait(1); continue end
                 local alive=getAlive()
                 if #alive==0 then statusLabel.Text="Waiting for spawns..."; statusLabel.TextColor3=Color3.fromRGB(150,150,150); mathLabel.Text="Ray dist: --"; priorityLabel.Text="Targeting: none"; task.wait(0.5); continue end
