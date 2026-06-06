@@ -189,10 +189,66 @@ local hoverHeight    = 15
 local behindDist     = 30
 local maxClusterDist = 200
 local nukerRunning   = false
-local teleportMode   = true
-local antiIdle       = true
-local autoSkipWeak   = true
-local priorityMode   = true
+
+-- SETTINGS PERSISTENCE
+local SETTINGS_FILE = "ag_hub_settings.json"
+local function saveSettings()
+    local t = {
+        activeTrainer  = _G.ActiveTrainer,
+        autoRespawn    = _G.AutoRespawnEnabled,
+        arTeleportBack = _G.ARTeleportBack,
+        autoQuest      = _G.AutoQuestEnabled,
+        teleportMode   = teleportMode,
+        antiIdle       = antiIdle,
+        autoSkipWeak   = autoSkipWeak,
+        priorityMode   = priorityMode,
+        enabledTargets = enabledTargets,
+    }
+    local at = t.activeTrainer and ('"' .. t.activeTrainer .. '"') or "null"
+    local et = t.enabledTargets
+    local json = '{"activeTrainer":' .. at
+        .. ',"autoRespawn":' .. tostring(t.autoRespawn)
+        .. ',"arTeleportBack":' .. tostring(t.arTeleportBack)
+        .. ',"autoQuest":' .. tostring(t.autoQuest)
+        .. ',"teleportMode":' .. tostring(t.teleportMode)
+        .. ',"antiIdle":' .. tostring(t.antiIdle)
+        .. ',"autoSkipWeak":' .. tostring(t.autoSkipWeak)
+        .. ',"priorityMode":' .. tostring(t.priorityMode)
+        .. ',"Noob":' .. tostring(et.Noob)
+        .. ',"Thug":' .. tostring(et.Thug)
+        .. ',"Mafia":' .. tostring(et.Mafia)
+        .. ',"WereWolf":' .. tostring(et.WereWolf)
+        .. ',"Robot":' .. tostring(et.Robot)
+        .. ',"Sath":' .. tostring(et.Sath)
+        .. '}'
+    pcall(function() writefile(SETTINGS_FILE, json) end)
+end
+local function lB(s, key, def)
+    local v = s:match('"' .. key .. '":(%a+)')
+    if v == "true" then return true elseif v == "false" then return false end
+    return def
+end
+local function lS(s, key)
+    return s:match('"' .. key .. '":"([^"]+)"')
+end
+local _sv = nil
+pcall(function() local r = readfile(SETTINGS_FILE) if r and #r > 2 then _sv = r end end)
+if _sv then
+    _G.ActiveTrainer      = lS(_sv, "activeTrainer")
+    _G.AutoRespawnEnabled = lB(_sv, "autoRespawn",    true)
+    _G.ARTeleportBack     = lB(_sv, "arTeleportBack", true)
+    _G.AutoQuestEnabled   = lB(_sv, "autoQuest",      true)
+    enabledTargets.Noob     = lB(_sv, "Noob",     true)
+    enabledTargets.Thug     = lB(_sv, "Thug",     true)
+    enabledTargets.Mafia    = lB(_sv, "Mafia",    true)
+    enabledTargets.WereWolf = lB(_sv, "WereWolf", true)
+    enabledTargets.Robot    = lB(_sv, "Robot",    false)
+    enabledTargets.Sath     = lB(_sv, "Sath",     true)
+end
+local teleportMode = _sv and lB(_sv, "teleportMode", true)  or true
+local antiIdle     = _sv and lB(_sv, "antiIdle",     true)  or true
+local autoSkipWeak = _sv and lB(_sv, "autoSkipWeak", true)  or true
+local priorityMode = _sv and lB(_sv, "priorityMode", true)  or true
 
 local tokenPriority  = {"Robot","Sath","WereWolf","Mafia","Thug","Noob"}
 local tokenValues    = {Robot=1e12,Sath=1e6,WereWolf=500000,Mafia=200000,Thug=10000,Noob=1000}
@@ -502,6 +558,7 @@ local function setTrainer(key)
         _G.ActiveTrainer = key
     end
     refreshTrainerBtns()
+    saveSettings()
 end
 
 btBtn.MouseButton1Click:Connect(function() setTrainer("BT") end)
@@ -524,9 +581,9 @@ local function refreshAQBtn()
     aqBtn.BackgroundColor3=_G.AutoQuestEnabled and Color3.fromRGB(30,120,80) or Color3.fromRGB(45,45,55)
 end
 refreshTrainerBtns(); refreshARBtn(); refreshTPBackBtn(); refreshAQBtn()
-aqBtn.MouseButton1Click:Connect(function() _G.AutoQuestEnabled=not _G.AutoQuestEnabled refreshAQBtn() end)
-arBtn.MouseButton1Click:Connect(function() _G.AutoRespawnEnabled=not _G.AutoRespawnEnabled refreshARBtn() end)
-tpBackBtn.MouseButton1Click:Connect(function() _G.ARTeleportBack=not _G.ARTeleportBack refreshTPBackBtn() end)
+aqBtn.MouseButton1Click:Connect(function() _G.AutoQuestEnabled=not _G.AutoQuestEnabled refreshAQBtn() saveSettings() end)
+arBtn.MouseButton1Click:Connect(function() _G.AutoRespawnEnabled=not _G.AutoRespawnEnabled refreshARBtn() saveSettings() end)
+tpBackBtn.MouseButton1Click:Connect(function() _G.ARTeleportBack=not _G.ARTeleportBack refreshTPBackBtn() saveSettings() end)
 
 -- NUKER PANEL
 local nukerPanel=Instance.new("Frame")
@@ -565,7 +622,7 @@ for i,name in ipairs({"Noob","Thug","Mafia","WereWolf","Robot","Sath"}) do
     local tb=Instance.new("TextButton"); tb.Size=UDim2.new(0,42,1,0); tb.BackgroundColor3=Color3.fromRGB(55,55,55)
     tb.BorderSizePixel=0; tb.Font=Enum.Font.GothamBold; tb.TextSize=9; tb.Text=name; tb.LayoutOrder=i; tb.Parent=toggleRow
     Instance.new("UICorner",tb).CornerRadius=UDim.new(0,5); updateToggleColor(tb,name); toggleButtons[name]=tb
-    tb.MouseButton1Click:Connect(function() enabledTargets[name]=not enabledTargets[name] updateToggleColor(tb,name) end)
+    tb.MouseButton1Click:Connect(function() enabledTargets[name]=not enabledTargets[name] updateToggleColor(tb,name) saveSettings() end)
 end
 
 mkNH(174,"MODE")
@@ -579,8 +636,8 @@ local function refreshModeButtons()
     TweenService:Create(fmBtn,TweenInfo.new(0.15),{BackgroundColor3=not teleportMode and Color3.fromRGB(55,115,210) or Color3.fromRGB(55,55,55)}):Play(); fmBtn.TextColor3=not teleportMode and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
 end
 refreshModeButtons()
-tpBtn.MouseButton1Click:Connect(function() teleportMode=true refreshModeButtons() end)
-fmBtn.MouseButton1Click:Connect(function() teleportMode=false refreshModeButtons() end)
+tpBtn.MouseButton1Click:Connect(function() teleportMode=true refreshModeButtons() saveSettings() end)
+fmBtn.MouseButton1Click:Connect(function() teleportMode=false refreshModeButtons() saveSettings() end)
 
 mkNH(228,"PRIORITY TARGET")
 local prioBtn=Instance.new("TextButton"); prioBtn.Size=UDim2.new(0,iw,0,28); prioBtn.Position=UDim2.new(0,pad,0,242); prioBtn.BorderSizePixel=0; prioBtn.Font=Enum.Font.GothamBold; prioBtn.TextSize=11; prioBtn.Text="🟡  Priority ON"; prioBtn.TextColor3=Color3.fromRGB(255,255,255); prioBtn.BackgroundColor3=Color3.fromRGB(180,130,20); prioBtn.Parent=nukerPanel; Instance.new("UICorner",prioBtn).CornerRadius=UDim.new(0,5)
@@ -588,6 +645,7 @@ prioBtn.MouseButton1Click:Connect(function()
     priorityMode=not priorityMode
     TweenService:Create(prioBtn,TweenInfo.new(0.15),{BackgroundColor3=priorityMode and Color3.fromRGB(180,130,20) or Color3.fromRGB(55,55,55)}):Play()
     prioBtn.TextColor3=priorityMode and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110); prioBtn.Text=priorityMode and "🟡  Priority ON" or "⭕  Priority OFF"
+    saveSettings()
 end)
 
 mkNH(282,"ANTI-IDLE")
@@ -596,6 +654,7 @@ idleBtn.MouseButton1Click:Connect(function()
     antiIdle=not antiIdle
     TweenService:Create(idleBtn,TweenInfo.new(0.15),{BackgroundColor3=antiIdle and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)}):Play()
     idleBtn.TextColor3=antiIdle and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110); idleBtn.Text=antiIdle and "🟢  Active" or "⭕  Off"
+    saveSettings()
 end)
 
 mkNH(336,"AUTO-SKIP WEAK")
@@ -604,6 +663,7 @@ skipBtn.MouseButton1Click:Connect(function()
     autoSkipWeak=not autoSkipWeak
     TweenService:Create(skipBtn,TweenInfo.new(0.15),{BackgroundColor3=autoSkipWeak and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)}):Play()
     skipBtn.TextColor3=autoSkipWeak and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110); skipBtn.Text=autoSkipWeak and "🟢  Active" or "⭕  Off"
+    saveSettings()
 end)
 
 local startBtn=Instance.new("TextButton"); startBtn.Size=UDim2.new(0,iw,0,34); startBtn.Position=UDim2.new(0,pad,0,392); startBtn.BackgroundColor3=Color3.fromRGB(40,180,80); startBtn.BorderSizePixel=0; startBtn.Font=Enum.Font.GothamBold; startBtn.TextSize=13; startBtn.TextColor3=Color3.fromRGB(255,255,255); startBtn.Text="▶  Start"; startBtn.Parent=nukerPanel; Instance.new("UICorner",startBtn).CornerRadius=UDim.new(0,6)
