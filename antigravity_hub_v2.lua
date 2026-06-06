@@ -246,9 +246,9 @@ local function saveSettings()
         tostring(_G.AutoQuestEnabled),
         tostring(teleportMode),
         tostring(antiIdle),
+        tostring(nukerRunning),
         tostring(autoSkipWeak),
         tostring(priorityMode),
-        tostring(nukerRunning),
         tostring(et.Noob),
         tostring(et.Thug),
         tostring(et.Mafia),
@@ -898,6 +898,7 @@ titleBar.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.M
 startBtn.MouseButton1Click:Connect(function()
     nukerRunning = not nukerRunning
     _G.nukerRunning = nukerRunning
+    saveSettings()
     if nukerRunning then
         startBtn.Text="■  Stop"; TweenService:Create(startBtn,TweenInfo.new(0.2),{BackgroundColor3=Color3.fromRGB(200,50,50)}):Play()
         statusLabel.Text="🔍 Searching..."; statusLabel.TextColor3=Color3.fromRGB(255,200,50)
