@@ -229,6 +229,7 @@ if _sv then
     enabledTargets.Phantom  = lB(_sv, "Phantom",  true)
 end
 if _sv then
+    nukerRunning = lB(_sv, "nukerRunning", false)
     teleportMode = lB(_sv, "teleportMode", true)
     antiIdle     = lB(_sv, "antiIdle",     true)
     autoSkipWeak = lB(_sv, "autoSkipWeak", true)
@@ -238,7 +239,7 @@ local function saveSettings()
     local at = _G.ActiveTrainer and ('"' .. _G.ActiveTrainer .. '"') or "null"
     local et = enabledTargets
     local json = string.format(
-        '{"activeTrainer":%s,"autoRespawn":%s,"arTeleportBack":%s,"autoQuest":%s,"teleportMode":%s,"antiIdle":%s,"autoSkipWeak":%s,"priorityMode":%s,"Noob":%s,"Thug":%s,"Mafia":%s,"WereWolf":%s,"Robot":%s,"Sath":%s,"Phantom":%s}',
+        '{"activeTrainer":%s,"autoRespawn":%s,"arTeleportBack":%s,"autoQuest":%s,"teleportMode":%s,"antiIdle":%s,"nukerRunning":%s,"autoSkipWeak":%s,"priorityMode":%s,"Noob":%s,"Thug":%s,"Mafia":%s,"WereWolf":%s,"Robot":%s,"Sath":%s,"Phantom":%s}',
         at,
         tostring(_G.AutoRespawnEnabled),
         tostring(_G.ARTeleportBack),
@@ -247,6 +248,7 @@ local function saveSettings()
         tostring(antiIdle),
         tostring(autoSkipWeak),
         tostring(priorityMode),
+        tostring(nukerRunning),
         tostring(et.Noob),
         tostring(et.Thug),
         tostring(et.Mafia),
@@ -684,6 +686,12 @@ do
     skipBtn.Text=autoSkipWeak and "🟢  Active" or "⭕  Off"
 end
 local startBtn=Instance.new("TextButton"); startBtn.Size=UDim2.new(0,iw,0,34); startBtn.Position=UDim2.new(0,pad,0,392); startBtn.BackgroundColor3=Color3.fromRGB(40,180,80); startBtn.BorderSizePixel=0; startBtn.Font=Enum.Font.GothamBold; startBtn.TextSize=13; startBtn.TextColor3=Color3.fromRGB(255,255,255); startBtn.Text="▶  Start"; startBtn.Parent=nukerPanel; Instance.new("UICorner",startBtn).CornerRadius=UDim.new(0,6)
+-- auto-start nuker if it was running on last session
+if nukerRunning then
+    _G.nukerRunning = true
+    startBtn.Text="■  Stop"; TweenService:Create(startBtn,TweenInfo.new(0),{BackgroundColor3=Color3.fromRGB(200,50,50)}):Play()
+    statusLabel.Text="🔍 Searching..."; statusLabel.TextColor3=Color3.fromRGB(255,200,50)
+end
 
 -- SETTINGS PANEL
 local settingsPanel=Instance.new("Frame")
@@ -888,31 +896,34 @@ titleBar.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.M
 
 -- NUKER LOOP
 startBtn.MouseButton1Click:Connect(function()
-    nukerRunning=not nukerRunning; _G.nukerRunning=nukerRunning
+    nukerRunning = not nukerRunning
+    _G.nukerRunning = nukerRunning
     if nukerRunning then
         startBtn.Text="■  Stop"; TweenService:Create(startBtn,TweenInfo.new(0.2),{BackgroundColor3=Color3.fromRGB(200,50,50)}):Play()
         statusLabel.Text="🔍 Searching..."; statusLabel.TextColor3=Color3.fromRGB(255,200,50)
-        task.spawn(function()
-            while nukerRunning and hubAlive and _G.nukerRunning do
-                if not character or not hrp or not hrp.Parent then statusLabel.Text="⏳ Waiting for character..."; task.wait(1); continue end
-                local alive=getAlive()
-                if #alive==0 then statusLabel.Text="Waiting for spawns..."; statusLabel.TextColor3=Color3.fromRGB(150,150,150); mathLabel.Text="Ray dist: --"; priorityLabel.Text="Targeting: none"; task.wait(0.5); continue end
-                local currentType=alive[1].name
-                priorityLabel.Text=string.format("Targeting: %s (%.0e tk)",currentType,tokenValues[currentType] or 0)
-                local radius=getSphereRadius(); sphereLabel.Text=string.format("Sphere: %.1f  FS: %.2e",radius,LP:GetAttribute("FistStrength") or 0)
-                local ok,_=pcall(findBestLine,alive,radius); if not ok then task.wait(0.5); continue end
-                local origin,dir,maxDist,centroid,hits=findBestLine(alive,radius); if not origin then task.wait(0.5); continue end
-                errorLabel.Text=""
-                statusLabel.Text=string.format("🔥 Hitting %d / %d",hits,#alive); statusLabel.TextColor3=Color3.fromRGB(255,120,50)
-                mathLabel.Text=string.format("Max dev: %.2f / %.1f  %s",maxDist,radius,hits==#alive and "✅" or "⚠️"); mathLabel.TextColor3=hits==#alive and Color3.fromRGB(100,220,100) or Color3.fromRGB(255,160,50)
-                if teleportMode then hrp.CFrame=CFrame.new(origin,origin+dir); task.wait(0.05) end
-                pcall(function() UseSkill:FireServer("EnergySphere",centroid+dir*behindDist) end)
-                task.wait(burstSpeed)
-            end
-            statusLabel.Text="Idle — press Start"; statusLabel.TextColor3=Color3.fromRGB(150,150,150); mathLabel.Text="Ray dist: --"; errorLabel.Text=""; priorityLabel.Text="Targeting: all"
-        end)
     else
         startBtn.Text="▶  Start"; TweenService:Create(startBtn,TweenInfo.new(0.2),{BackgroundColor3=Color3.fromRGB(40,180,80)}):Play()
+        statusLabel.Text="Idle — press Start"; statusLabel.TextColor3=Color3.fromRGB(150,150,150)
+        mathLabel.Text="Ray dist: --"; errorLabel.Text=""; priorityLabel.Text="Targeting: all"
+    end
+end)
+task.spawn(function()
+    while hubAlive do
+        if not nukerRunning then task.wait(0.2); continue end
+        if not character or not hrp or not hrp.Parent then statusLabel.Text="⏳ Waiting for character..."; task.wait(1); continue end
+        local alive=getAlive()
+        if #alive==0 then statusLabel.Text="Waiting for spawns..."; statusLabel.TextColor3=Color3.fromRGB(150,150,150); mathLabel.Text="Ray dist: --"; priorityLabel.Text="Targeting: none"; task.wait(0.5); continue end
+        local currentType=alive[1].name
+        priorityLabel.Text=string.format("Targeting: %s (%.0e tk)",currentType,tokenValues[currentType] or 0)
+        local radius=getSphereRadius(); sphereLabel.Text=string.format("Sphere: %.1f  FS: %.2e",radius,LP:GetAttribute("FistStrength") or 0)
+        local ok,_=pcall(findBestLine,alive,radius); if not ok then task.wait(0.5); continue end
+        local origin,dir,maxDist,centroid,hits=findBestLine(alive,radius); if not origin then task.wait(0.5); continue end
+        errorLabel.Text=""
+        statusLabel.Text=string.format("🔥 Hitting %d / %d",hits,#alive); statusLabel.TextColor3=Color3.fromRGB(255,120,50)
+        mathLabel.Text=string.format("Max dev: %.2f / %.1f  %s",maxDist,radius,hits==#alive and "✅" or "⚠️"); mathLabel.TextColor3=hits==#alive and Color3.fromRGB(100,220,100) or Color3.fromRGB(255,160,50)
+        if teleportMode then hrp.CFrame=CFrame.new(origin,origin+dir); task.wait(0.05) end
+        pcall(function() UseSkill:FireServer("EnergySphere",centroid+dir*behindDist) end)
+        task.wait(burstSpeed)
     end
 end)
 
