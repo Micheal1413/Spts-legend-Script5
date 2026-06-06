@@ -368,7 +368,18 @@ local function hookCharacter(char)
     end)
 end
 
-if LP.Character then hookCharacter(LP.Character) fixCamera(LP.Character) end
+if LP.Character then
+    hookCharacter(LP.Character)
+    fixCamera(LP.Character)
+    -- fire join-time loaded sequence so intro/blur clears without clicking
+    task.spawn(function()
+        task.wait(0.3)
+        pcall(function() Loaded:FireServer() end)
+        task.wait(0.05)
+        restoreUI()
+        warn("[AutoRespawn] Join-time load fired")
+    end)
+end
 LP.CharacterAdded:Connect(function(char) hookCharacter(char) fixCamera(char) end)
 
 -- GUI
