@@ -443,10 +443,10 @@ LP.CharacterAdded:Connect(function(char) hookCharacter(char) fixCamera(char) end
 local sg=Instance.new("ScreenGui"); sg.Name="CombinedHubGui"; sg.ResetOnSpawn=false
 pcall(function() sg.Parent=CG end); if not sg.Parent then sg.Parent=PG end
 
-local frameW=310; local pad=10; local iw=frameW-pad*2
+local frameW=340; local pad=10; local iw=frameW-pad*2
 
 local mainFrame=Instance.new("Frame")
-mainFrame.Size=UDim2.new(0,frameW,0,510); mainFrame.Position=UDim2.new(0.05,0,0.05,0)
+mainFrame.Size=UDim2.new(0,frameW,0,560); mainFrame.Position=UDim2.new(0.05,0,0.05,0)
 mainFrame.BackgroundColor3=Color3.fromRGB(12,12,18); mainFrame.BorderSizePixel=0
 mainFrame.Active=true; mainFrame.Draggable=true; mainFrame.Parent=sg
 Instance.new("UICorner",mainFrame).CornerRadius=UDim.new(0,12)
@@ -500,14 +500,14 @@ end
 
 -- Row 1: trainer toggles (BT / FS / PS) — radio style, one at a time
 local btnW = math.floor((iw - 8) / 3)
-local btBtn = mkHBtn(pad,          btnW, 6, 30)
-local fsBtn = mkHBtn(pad+btnW+4,   btnW, 6, 30)
-local psBtn = mkHBtn(pad+btnW*2+8, btnW, 6, 30)
+local btBtn = mkHBtn(pad,          btnW, 6, 32)
+local fsBtn = mkHBtn(pad+btnW+4,   btnW, 6, 32)
+local psBtn = mkHBtn(pad+btnW*2+8, btnW, 6, 32)
 
 -- Row 2: AR toggle + TP back
-local arBtn=mkHBtn(pad, math.floor(iw/2)-2, 42, 26)
-local tpBackBtn=mkHBtn(pad+math.floor(iw/2)+2, math.floor(iw/2)-2, 42, 26)
-local aqBtn=mkHBtn(pad, iw, 74, 26)
+local arBtn=mkHBtn(pad, math.floor(iw/2)-2, 42, 28)
+local tpBackBtn=mkHBtn(pad+math.floor(iw/2)+2, math.floor(iw/2)-2, 42, 28)
+local aqBtn=mkHBtn(pad, iw, 76, 28)
 
 local hubDiv=Instance.new("Frame"); hubDiv.Size=UDim2.new(1,-20,0,1); hubDiv.Position=UDim2.new(0,pad,0,107)
 hubDiv.BackgroundColor3=Color3.fromRGB(55,45,75); hubDiv.BorderSizePixel=0; hubDiv.Parent=hubPanel
@@ -533,7 +533,7 @@ local fusReqLbl =mkHL(340,18,"Next: ---",       Color3.fromRGB(200,170,255))
 local fusPctLbl =mkHL(358,18,"Progress: ---",   Color3.fromRGB(100,220,100))
 local fusRateLbl=mkHL(376,18,"Rate:  ---",       Color3.fromRGB(160,200,255))
 local fusEtaLbl =mkHL(394,22,"ETA:   ---",       Color3.fromRGB(120,240,255),nil,true)
-mkHL(422,14,"Antigravity 💜  |  BT:"..#btAreas.."  FS:"..#fsAreas.."  PS:"..#psAreas.." zones",Color3.fromRGB(70,60,100),Enum.TextXAlignment.Center)
+mkHL(430,14,"Antigravity 💜  |  BT:"..#btAreas.."  FS:"..#fsAreas.."  PS:"..#psAreas.." zones",Color3.fromRGB(70,60,100),Enum.TextXAlignment.Center)
 
 -- TRAINER BUTTON LOGIC
 local trainerBtns = {BT=btBtn, FS=fsBtn, PS=psBtn}
@@ -610,7 +610,7 @@ local mathLabel=mkNL(80,18,"Ray dist: --",Color3.fromRGB(100,200,100),Enum.Font.
 local errorLabel=mkNL(100,14,"",Color3.fromRGB(255,80,80),Enum.Font.Code,10)
 
 mkNH(120,"TARGETS")
-local toggleRow=Instance.new("Frame"); toggleRow.Size=UDim2.new(0,iw,0,28); toggleRow.Position=UDim2.new(0,pad,0,134)
+local toggleRow=Instance.new("Frame"); toggleRow.Size=UDim2.new(0,iw,0,32); toggleRow.Position=UDim2.new(0,pad,0,134)
 toggleRow.BackgroundTransparency=1; toggleRow.Parent=nukerPanel
 local tLayout=Instance.new("UIListLayout"); tLayout.FillDirection=Enum.FillDirection.Horizontal; tLayout.SortOrder=Enum.SortOrder.LayoutOrder; tLayout.Padding=UDim.new(0,4); tLayout.Parent=toggleRow
 
@@ -620,18 +620,18 @@ local function updateToggleColor(btn,name)
     btn.TextColor3=on and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
 end
 for i,name in ipairs({"Noob","Thug","Mafia","WereWolf","Robot","Sath","Phantom"}) do
-    local tb=Instance.new("TextButton"); tb.Size=UDim2.new(0,42,1,0); tb.BackgroundColor3=Color3.fromRGB(55,55,55)
+    local tb=Instance.new("TextButton"); tb.Size=UDim2.new(0,math.floor((iw-24)/7),1,0); tb.BackgroundColor3=Color3.fromRGB(55,55,55)
     tb.BorderSizePixel=0; tb.Font=Enum.Font.GothamBold; tb.TextSize=9; tb.Text=name; tb.LayoutOrder=i; tb.Parent=toggleRow
     Instance.new("UICorner",tb).CornerRadius=UDim.new(0,5); updateToggleColor(tb,name); toggleButtons[name]=tb
     tb.MouseButton1Click:Connect(function() enabledTargets[name]=not enabledTargets[name] updateToggleColor(tb,name) saveSettings() end)
 end
 
 mkNH(174,"MODE")
-local modeRow=Instance.new("Frame"); modeRow.Size=UDim2.new(0,iw,0,28); modeRow.Position=UDim2.new(0,pad,0,188)
+local modeRow=Instance.new("Frame"); modeRow.Size=UDim2.new(0,iw,0,32); modeRow.Position=UDim2.new(0,pad,0,188)
 modeRow.BackgroundTransparency=1; modeRow.Parent=nukerPanel
 local mLayout=Instance.new("UIListLayout"); mLayout.FillDirection=Enum.FillDirection.Horizontal; mLayout.SortOrder=Enum.SortOrder.LayoutOrder; mLayout.Padding=UDim.new(0,6); mLayout.Parent=modeRow
-local tpBtn=Instance.new("TextButton"); tpBtn.Size=UDim2.new(0,140,1,0); tpBtn.BorderSizePixel=0; tpBtn.Font=Enum.Font.GothamBold; tpBtn.TextSize=11; tpBtn.Text="⚡ Teleport"; tpBtn.LayoutOrder=1; tpBtn.Parent=modeRow; Instance.new("UICorner",tpBtn).CornerRadius=UDim.new(0,5)
-local fmBtn=Instance.new("TextButton"); fmBtn.Size=UDim2.new(0,140,1,0); fmBtn.BorderSizePixel=0; fmBtn.Font=Enum.Font.GothamBold; fmBtn.TextSize=11; fmBtn.Text="🚶 Free Move"; fmBtn.LayoutOrder=2; fmBtn.Parent=modeRow; Instance.new("UICorner",fmBtn).CornerRadius=UDim.new(0,5)
+local tpBtn=Instance.new("TextButton"); tpBtn.Size=UDim2.new(0,math.floor(iw/2)-3,1,0); tpBtn.BorderSizePixel=0; tpBtn.Font=Enum.Font.GothamBold; tpBtn.TextSize=11; tpBtn.Text="⚡ Teleport"; tpBtn.LayoutOrder=1; tpBtn.Parent=modeRow; Instance.new("UICorner",tpBtn).CornerRadius=UDim.new(0,5)
+local fmBtn=Instance.new("TextButton"); fmBtn.Size=UDim2.new(0,math.floor(iw/2)-3,1,0); fmBtn.BorderSizePixel=0; fmBtn.Font=Enum.Font.GothamBold; fmBtn.TextSize=11; fmBtn.Text="🚶 Free Move"; fmBtn.LayoutOrder=2; fmBtn.Parent=modeRow; Instance.new("UICorner",fmBtn).CornerRadius=UDim.new(0,5)
 local function refreshModeButtons()
     TweenService:Create(tpBtn,TweenInfo.new(0.15),{BackgroundColor3=teleportMode and Color3.fromRGB(55,115,210) or Color3.fromRGB(55,55,55)}):Play(); tpBtn.TextColor3=teleportMode and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
     TweenService:Create(fmBtn,TweenInfo.new(0.15),{BackgroundColor3=not teleportMode and Color3.fromRGB(55,115,210) or Color3.fromRGB(55,55,55)}):Play(); fmBtn.TextColor3=not teleportMode and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
@@ -1077,6 +1077,3 @@ warn("[AG] Ready — BT:"..#btAreas.." FS:"..#fsAreas.." PS:"..#psAreas.." zones
 warn("[AutoRespawn] Active")
 warn("[LineShotNuker] Ready")
 warn("[FusionTracker] Active")
-
-
-
