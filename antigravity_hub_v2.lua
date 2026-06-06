@@ -78,6 +78,14 @@ local fusionTiers = {
     {name="Phoenix", req=1e38},
     {name="Reaper",  req=1e44},
     {name="Omega",   req=1e48},
+    {name="Zenith",  req=1e52},
+    {name="Paragon", req=5e54},
+},
+    {name="Werewolf",req=1e24},
+    {name="Gryphon", req=1e30},
+    {name="Phoenix", req=1e38},
+    {name="Reaper",  req=1e44},
+    {name="Omega",   req=1e48},
 }
 local fusionSamples = {}
 local FUSION_WINDOW = 300
@@ -194,10 +202,10 @@ local antiIdle       = true
 local autoSkipWeak   = true
 local priorityMode   = true
 
-local tokenPriority  = {"Robot","Sath","WereWolf","Mafia","Thug","Noob"}
-local tokenValues    = {Robot=1e12,Sath=1e6,WereWolf=500000,Mafia=200000,Thug=10000,Noob=1000}
-local trackable      = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=true,Sath=true}
-local enabledTargets = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=false,Sath=true}
+local tokenPriority  = {"Phantom","Robot","Sath","WereWolf","Mafia","Thug","Noob"}
+local tokenValues    = {Phantom=25e12,Robot=1e12,Sath=1e6,WereWolf=500000,Mafia=200000,Thug=10000,Noob=1000}
+local trackable      = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=true,Sath=true,Phantom=true}
+local enabledTargets = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=false,Sath=true,Phantom=true}
 -- SETTINGS PERSISTENCE
 local SETTINGS_FILE = "ag_hub_settings.json"
 local function lB(s, key, def)
@@ -209,7 +217,9 @@ local function lS(s, key)
     return s:match('"' .. key .. '":"([^"]+)"')
 end
 local _sv = nil
-pcall(function() if readfile then local r = readfile(SETTINGS_FILE) if r and #r > 2 then _sv = r end end end)
+local _svOk, _svErr = pcall(function() if readfile then local r = readfile(SETTINGS_FILE) if r and #r > 2 then _sv = r end end end)
+if not _svOk then warn('[Settings] Load error: ' .. tostring(_svErr)) end
+if _sv then warn('[Settings] Loaded from disk OK') else warn('[Settings] No save file, using defaults') end
 if _sv then
     _G.ActiveTrainer      = lS(_sv, "activeTrainer")
     _G.AutoRespawnEnabled = lB(_sv, "autoRespawn",    true)
@@ -221,6 +231,7 @@ if _sv then
     enabledTargets.WereWolf = lB(_sv, "WereWolf", true)
     enabledTargets.Robot    = lB(_sv, "Robot",    false)
     enabledTargets.Sath     = lB(_sv, "Sath",     true)
+    enabledTargets.Phantom  = lB(_sv, "Phantom",  true)
 end
 local teleportMode = (_sv and lB(_sv, "teleportMode", true)) or true
 local antiIdle     = (_sv and lB(_sv, "antiIdle",     true)) or true
@@ -229,23 +240,26 @@ local priorityMode = (_sv and lB(_sv, "priorityMode", true)) or true
 local function saveSettings()
     local at = _G.ActiveTrainer and ('"' .. _G.ActiveTrainer .. '"') or "null"
     local et = enabledTargets
-    local json = "{"
-        .. ""activeTrainer":" .. at
-        .. ","autoRespawn":" .. tostring(_G.AutoRespawnEnabled)
-        .. ","arTeleportBack":" .. tostring(_G.ARTeleportBack)
-        .. ","autoQuest":" .. tostring(_G.AutoQuestEnabled)
-        .. ","teleportMode":" .. tostring(teleportMode)
-        .. ","antiIdle":" .. tostring(antiIdle)
-        .. ","autoSkipWeak":" .. tostring(autoSkipWeak)
-        .. ","priorityMode":" .. tostring(priorityMode)
-        .. ","Noob":" .. tostring(et.Noob)
-        .. ","Thug":" .. tostring(et.Thug)
-        .. ","Mafia":" .. tostring(et.Mafia)
-        .. ","WereWolf":" .. tostring(et.WereWolf)
-        .. ","Robot":" .. tostring(et.Robot)
-        .. ","Sath":" .. tostring(et.Sath)
-        .. "}"
-    pcall(function() if writefile then writefile(SETTINGS_FILE, json) end end)
+    local json = string.format(
+        '{"activeTrainer":%s,"autoRespawn":%s,"arTeleportBack":%s,"autoQuest":%s,"teleportMode":%s,"antiIdle":%s,"autoSkipWeak":%s,"priorityMode":%s,"Noob":%s,"Thug":%s,"Mafia":%s,"WereWolf":%s,"Robot":%s,"Sath":%s,"Phantom":%s}',
+        at,
+        tostring(_G.AutoRespawnEnabled),
+        tostring(_G.ARTeleportBack),
+        tostring(_G.AutoQuestEnabled),
+        tostring(teleportMode),
+        tostring(antiIdle),
+        tostring(autoSkipWeak),
+        tostring(priorityMode),
+        tostring(et.Noob),
+        tostring(et.Thug),
+        tostring(et.Mafia),
+        tostring(et.WereWolf),
+        tostring(et.Robot),
+        tostring(et.Sath),
+        tostring(et.Phantom)
+    )
+    local ok, err = pcall(function() if writefile then writefile(SETTINGS_FILE, json) end end)
+    if not ok then warn("[Settings] Save failed: " .. tostring(err)) end
 end
 
 local character = LP.Character or LP.CharacterAdded:Wait()
@@ -611,7 +625,7 @@ local function updateToggleColor(btn,name)
     TweenService:Create(btn,TweenInfo.new(0.15),{BackgroundColor3=on and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)}):Play()
     btn.TextColor3=on and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
 end
-for i,name in ipairs({"Noob","Thug","Mafia","WereWolf","Robot","Sath"}) do
+for i,name in ipairs({"Noob","Thug","Mafia","WereWolf","Robot","Sath","Phantom"}) do
     local tb=Instance.new("TextButton"); tb.Size=UDim2.new(0,42,1,0); tb.BackgroundColor3=Color3.fromRGB(55,55,55)
     tb.BorderSizePixel=0; tb.Font=Enum.Font.GothamBold; tb.TextSize=9; tb.Text=name; tb.LayoutOrder=i; tb.Parent=toggleRow
     Instance.new("UICorner",tb).CornerRadius=UDim.new(0,5); updateToggleColor(tb,name); toggleButtons[name]=tb
