@@ -1,4 +1,4 @@
--- cleanup old GUIs
+﻿-- cleanup old GUIs
 for _, v in ipairs(game:GetService("CoreGui"):GetChildren()) do
     if v.Name == "AntigravityHubGui" or v.Name == "LineShotUI" or v.Name == "CombinedHubGui" then v:Destroy() end
 end
@@ -227,10 +227,10 @@ if _sv then
     enabledTargets.Sath     = lB(_sv, "Sath",     true)
     enabledTargets.Phantom  = lB(_sv, "Phantom",  true)
 end
-local teleportMode = (_sv and lB(_sv, "teleportMode", true)) or true
-local antiIdle     = (_sv and lB(_sv, "antiIdle",     true)) or true
-local autoSkipWeak = (_sv and lB(_sv, "autoSkipWeak", true)) or true
-local priorityMode = (_sv and lB(_sv, "priorityMode", true)) or true
+teleportMode = (_sv and lB(_sv, "teleportMode", true)) or true
+antiIdle     = (_sv and lB(_sv, "antiIdle",     true)) or true
+autoSkipWeak = (_sv and lB(_sv, "autoSkipWeak", true)) or true
+priorityMode = (_sv and lB(_sv, "priorityMode", true)) or true
 local function saveSettings()
     local at = _G.ActiveTrainer and ('"' .. _G.ActiveTrainer .. '"') or "null"
     local et = enabledTargets
@@ -667,6 +667,19 @@ skipBtn.MouseButton1Click:Connect(function()
     saveSettings()
 end)
 
+-- sync nuker buttons to loaded settings
+do
+    refreshModeButtons()
+    prioBtn.BackgroundColor3=priorityMode and Color3.fromRGB(180,130,20) or Color3.fromRGB(55,55,55)
+    prioBtn.TextColor3=priorityMode and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
+    prioBtn.Text=priorityMode and "🟡  Priority ON" or "⭕  Priority OFF"
+    idleBtn.BackgroundColor3=antiIdle and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)
+    idleBtn.TextColor3=antiIdle and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
+    idleBtn.Text=antiIdle and "🟢  Active" or "⭕  Off"
+    skipBtn.BackgroundColor3=autoSkipWeak and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)
+    skipBtn.TextColor3=autoSkipWeak and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
+    skipBtn.Text=autoSkipWeak and "🟢  Active" or "⭕  Off"
+end
 local startBtn=Instance.new("TextButton"); startBtn.Size=UDim2.new(0,iw,0,34); startBtn.Position=UDim2.new(0,pad,0,392); startBtn.BackgroundColor3=Color3.fromRGB(40,180,80); startBtn.BorderSizePixel=0; startBtn.Font=Enum.Font.GothamBold; startBtn.TextSize=13; startBtn.TextColor3=Color3.fromRGB(255,255,255); startBtn.Text="▶  Start"; startBtn.Parent=nukerPanel; Instance.new("UICorner",startBtn).CornerRadius=UDim.new(0,6)
 
 -- SETTINGS PANEL
