@@ -201,6 +201,8 @@ local tokenPriority  = {"Phantom","Robot","Sath","WereWolf","Mafia","Thug","Noob
 local tokenValues    = {Phantom=25e12,Robot=1e12,Sath=1e6,WereWolf=500000,Mafia=200000,Thug=10000,Noob=1000}
 local trackable      = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=true,Sath=true,Phantom=true}
 local enabledTargets = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=false,Sath=true,Phantom=true}
+-- manualTargets mirrors enabledTargets but is only written on manual button press, never by auto-skip
+local manualTargets = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=false,Sath=true,Phantom=true}
 -- SETTINGS PERSISTENCE
 local SETTINGS_FILE = "ag_hub_settings.json"
 local function lB(s, key, def)
@@ -220,13 +222,14 @@ if _sv then
     _G.AutoRespawnEnabled = lB(_sv, "autoRespawn",    true)
     _G.ARTeleportBack     = lB(_sv, "arTeleportBack", true)
     _G.AutoQuestEnabled   = lB(_sv, "autoQuest",      true)
-    enabledTargets.Noob     = lB(_sv, "Noob",     true)
-    enabledTargets.Thug     = lB(_sv, "Thug",     true)
-    enabledTargets.Mafia    = lB(_sv, "Mafia",    true)
-    enabledTargets.WereWolf = lB(_sv, "WereWolf", true)
-    enabledTargets.Robot    = lB(_sv, "Robot",    false)
-    enabledTargets.Sath     = lB(_sv, "Sath",     true)
-    enabledTargets.Phantom  = lB(_sv, "Phantom",  true)
+    manualTargets.Noob     = lB(_sv, "Noob",     true)
+    manualTargets.Thug     = lB(_sv, "Thug",     true)
+    manualTargets.Mafia    = lB(_sv, "Mafia",    true)
+    manualTargets.WereWolf = lB(_sv, "WereWolf", true)
+    manualTargets.Robot    = lB(_sv, "Robot",    false)
+    manualTargets.Sath     = lB(_sv, "Sath",     true)
+    manualTargets.Phantom  = lB(_sv, "Phantom",  true)
+    for k,v in pairs(manualTargets) do enabledTargets[k]=v end
 end
 if _sv then
     nukerRunning = lB(_sv, "nukerRunning", false)
@@ -249,13 +252,13 @@ local function saveSettings()
         tostring(nukerRunning),
         tostring(autoSkipWeak),
         tostring(priorityMode),
-        tostring(et.Noob),
-        tostring(et.Thug),
-        tostring(et.Mafia),
-        tostring(et.WereWolf),
-        tostring(et.Robot),
-        tostring(et.Sath),
-        tostring(et.Phantom)
+        tostring(manualTargets.Noob),
+        tostring(manualTargets.Thug),
+        tostring(manualTargets.Mafia),
+        tostring(manualTargets.WereWolf),
+        tostring(manualTargets.Robot),
+        tostring(manualTargets.Sath),
+        tostring(manualTargets.Phantom)
     )
     local ok, err = pcall(function() if writefile then writefile(SETTINGS_FILE, json) end end)
     if not ok then warn("[Settings] Save failed: " .. tostring(err)) end
@@ -628,7 +631,7 @@ for i,name in ipairs({"Noob","Thug","Mafia","WereWolf","Robot","Sath","Phantom"}
     local tb=Instance.new("TextButton"); tb.Size=UDim2.new(0,math.floor((iw-24)/7),1,0); tb.BackgroundColor3=Color3.fromRGB(55,55,55)
     tb.BorderSizePixel=0; tb.Font=Enum.Font.GothamBold; tb.TextSize=9; tb.Text=name; tb.LayoutOrder=i; tb.Parent=toggleRow
     Instance.new("UICorner",tb).CornerRadius=UDim.new(0,5); updateToggleColor(tb,name); toggleButtons[name]=tb
-    tb.MouseButton1Click:Connect(function() enabledTargets[name]=not enabledTargets[name] updateToggleColor(tb,name) saveSettings() end)
+    tb.MouseButton1Click:Connect(function() enabledTargets[name]=not enabledTargets[name] manualTargets[name]=enabledTargets[name] updateToggleColor(tb,name) saveSettings() end)
 end
 
 mkNH(174,"MODE")
