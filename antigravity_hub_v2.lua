@@ -13,7 +13,9 @@ local TweenService = game:GetService("TweenService")
 local StarterGui   = game:GetService("StarterGui")
 local CG           = game:GetService("CoreGui")
 local Lighting     = game:GetService("Lighting")
-local VirtualUser  = game:GetService("VirtualUser")
+local VirtualUser      = game:GetService("VirtualUser")
+local VIM              = game:GetService("VirtualInputManager")
+local VIM              = game:GetService("VirtualInputManager")
 local LP           = Players.LocalPlayer
 local PG           = LP:WaitForChild("PlayerGui")
 local Camera       = workspace.CurrentCamera
@@ -22,6 +24,9 @@ local RemoteEvents     = game.ReplicatedStorage.RemoteEvents
 local RefreshCharacter = RemoteEvents.RefreshCharacter
 local Loaded           = RemoteEvents.Loaded
 local UseSkill         = RemoteEvents.UseSkill
+local JF_Train         = RemoteEvents.JF_Train
+local SetWeight        = RemoteEvents.SetWeight
+local SetWeight        = RemoteEvents.SetWeight
 
 _G.ActiveTrainer      = nil   -- "BT" | "FS" | "PS" | nil
 _G.AutoRespawnEnabled = true
@@ -153,6 +158,7 @@ local trainerConfig = {
     BT = {areas=btAreas, stat="BodyToughness",   multiStat="BodyToughnessMultiplier",   color=Color3.fromRGB(255,140,50)},
     FS = {areas=fsAreas, stat="FistStrength",     multiStat="FistStrengthMultiplier",    color=Color3.fromRGB(100,180,255)},
     PS = {areas=psAreas, stat="PsychicPower",     multiStat="PsychicPowerMultiplier",    color=Color3.fromRGB(200,100,255)},
+    JF = {areas=nil,          stat="JumpForce",         multiStat="JumpForceMultiplier",       color=Color3.fromRGB(80,220,120)},
 }
 
 local function getAreaLandCFrame(a)
@@ -454,7 +460,7 @@ pcall(function() sg.Parent=CG end); if not sg.Parent then sg.Parent=PG end
 local frameW=340; local pad=10; local iw=frameW-pad*2
 
 local mainFrame=Instance.new("Frame")
-mainFrame.Size=UDim2.new(0,frameW,0,560); mainFrame.Position=UDim2.new(0.05,0,0.05,0)
+mainFrame.Size=UDim2.new(0,frameW,0,596); mainFrame.Position=UDim2.new(0.05,0,0.05,0)
 mainFrame.BackgroundColor3=Color3.fromRGB(12,12,18); mainFrame.BorderSizePixel=0
 mainFrame.Active=true; mainFrame.Draggable=true; mainFrame.Parent=sg
 Instance.new("UICorner",mainFrame).CornerRadius=UDim.new(0,12)
@@ -507,11 +513,11 @@ local function mkHBtn(x,w,y,h)
 end
 
 -- Row 1: trainer toggles (BT / FS / PS) — radio style, one at a time
-local btnW = math.floor((iw - 8) / 3)
-local btBtn = mkHBtn(pad,          btnW, 6, 32)
-local fsBtn = mkHBtn(pad+btnW+4,   btnW, 6, 32)
-local psBtn = mkHBtn(pad+btnW*2+8, btnW, 6, 32)
-
+local btnW = math.floor((iw - 12) / 4)
+local btBtn = mkHBtn(pad,              btnW, 6, 32)
+local fsBtn = mkHBtn(pad+btnW+4,       btnW, 6, 32)
+local psBtn = mkHBtn(pad+btnW*2+8,     btnW, 6, 32)
+local jfBtn = mkHBtn(pad+btnW*3+12,    btnW, 6, 32)'
 -- Row 2: AR toggle + TP back
 local arBtn=mkHBtn(pad, math.floor(iw/2)-2, 42, 28)
 local tpBackBtn=mkHBtn(pad+math.floor(iw/2)+2, math.floor(iw/2)-2, 42, 28)
@@ -526,27 +532,33 @@ local modeLbl  = mkHL(130,  18, "Mode: ---",           dz)
 local btLbl    = mkHL(148, 18, "BT: ...",             Color3.fromRGB(255,140,50))
 local fsLbl    = mkHL(166, 18, "FS: ...",             Color3.fromRGB(100,180,255))
 local psLbl    = mkHL(184, 18, "PS: ...",             Color3.fromRGB(200,100,255))
-local hpLbl    = mkHL(202, 18, "HP: ...",             dz)
-local nextLbl  = mkHL(220, 18, "Next zone: ---",      Color3.fromRGB(170,160,200))
-local etaLbl   = mkHL(238, 18, "ETA: ---",            Color3.fromRGB(130,110,180))
-local stLbl    = mkHL(256, 18, "Status: idle",        Color3.fromRGB(170,160,190))
-local arLbl    = mkHL(274, 18, "AutoRespawn: on",     Color3.fromRGB(90,200,255))
+local jfLbl    = mkHL(202, 18, "JF: ...",             Color3.fromRGB(80,220,120))
+local weightLbl= mkHL(220, 18, "Weight: ---",          Color3.fromRGB(180,220,100))
+local jfLbl    = mkHL(202, 18, "JF: ...",             Color3.fromRGB(80,220,120))
+local weightLbl= mkHL(220, 18, "Weight: ---",          Color3.fromRGB(180,220,100))
+local hpLbl    = mkHL(238, 18, "HP: ...",             dz)
+local nextLbl  = mkHL(256, 18, "Next zone: ---",      Color3.fromRGB(170,160,200))
+local etaLbl   = mkHL(274, 18, "ETA: ---",            Color3.fromRGB(130,110,180))
+local stLbl    = mkHL(292, 18, "Status: idle",        Color3.fromRGB(170,160,190))
+local arLbl    = mkHL(310, 18, "AutoRespawn: on",     Color3.fromRGB(90,200,255))
 
-local fusDivider=Instance.new("Frame"); fusDivider.Size=UDim2.new(1,-20,0,1); fusDivider.Position=UDim2.new(0,pad,0,298)
+local fusDivider=Instance.new("Frame"); fusDivider.Size=UDim2.new(1,-20,0,1); fusDivider.Position=UDim2.new(0,pad,0,334)
 fusDivider.BackgroundColor3=Color3.fromRGB(80,50,120); fusDivider.BorderSizePixel=0; fusDivider.Parent=hubPanel
 
-mkHL(304,14,"✨  FUSION TRACKER",Color3.fromRGB(200,160,255),nil,true)
-local fusStatLbl=mkHL(322,18,"TP:  ---  [?]",  Color3.fromRGB(255,200,80))
-local fusReqLbl =mkHL(340,18,"Next: ---",       Color3.fromRGB(200,170,255))
-local fusPctLbl =mkHL(358,18,"Progress: ---",   Color3.fromRGB(100,220,100))
-local fusRateLbl=mkHL(376,18,"Rate:  ---",       Color3.fromRGB(160,200,255))
-local fusEtaLbl =mkHL(394,22,"ETA:   ---",       Color3.fromRGB(120,240,255),nil,true)
-mkHL(430,14,"Antigravity 💜  |  BT:"..#btAreas.."  FS:"..#fsAreas.."  PS:"..#psAreas.." zones",Color3.fromRGB(70,60,100),Enum.TextXAlignment.Center)
+mkHL(340,14,"✨  FUSION TRACKER",Color3.fromRGB(200,160,255),nil,true)
+local fusStatLbl=mkHL(358,18,"TP:  ---  [?]",  Color3.fromRGB(255,200,80))
+local fusReqLbl =mkHL(376,18,"Next: ---",       Color3.fromRGB(200,170,255))
+local fusPctLbl =mkHL(394,18,"Progress: ---",   Color3.fromRGB(100,220,100))
+local fusRateLbl=mkHL(412,18,"Rate:  ---",       Color3.fromRGB(160,200,255))
+local fusEtaLbl =mkHL(430,22,"ETA:   ---",       Color3.fromRGB(120,240,255),nil,true)
+mkHL(466,14,"Antigravity 💜  |  BT:"..#btAreas.."  FS:"..#fsAreas.."  PS:"..#psAreas.." zones",Color3.fromRGB(70,60,100),Enum.TextXAlignment.Center)
 
 -- TRAINER BUTTON LOGIC
-local trainerBtns = {BT=btBtn, FS=fsBtn, PS=psBtn}
-local trainerLabels = {BT="💪 BT", FS="👊 FS", PS="🔮 PS"}
-local trainerColors = {
+local trainerBtns = {BT=btBtn, FS=fsBtn, PS=psBtn, JF=jfBtn}
+local trainerLabels = {BT="💪 BT", FS="👊 FS", PS="🔮 PS", JF="🦘 JF"}
+
+    JF = Color3.fromRGB(20,130,60),
+    JF = Color3.fromRGB(20,130,60),
     BT = Color3.fromRGB(38,105,42),
     FS = Color3.fromRGB(30,90,160),
     PS = Color3.fromRGB(110,40,160),
@@ -573,6 +585,23 @@ end
 btBtn.MouseButton1Click:Connect(function() setTrainer("BT") end)
 fsBtn.MouseButton1Click:Connect(function() setTrainer("FS") end)
 psBtn.MouseButton1Click:Connect(function() setTrainer("PS") end)
+jfBtn.MouseButton1Click:Connect(function()
+    local active = _G.ActiveTrainer
+    if active ~= "BT" and active ~= "FS" then
+        warn("[JF] Turn on BT or FS first!")
+        return
+    end
+    setTrainer("JF")
+end)
+jfBtn.MouseButton1Click:Connect(function()
+    local active = _G.ActiveTrainer
+    -- JF only works with BT or FS active
+    if active ~= "BT" and active ~= "FS" then
+        warn("[JF] Enable BT or FS trainer first!")
+        return
+    end
+    setTrainer("JF")
+end)
 
 local function refreshARBtn()
     arBtn.Text="🔄 AR: "..(_G.AutoRespawnEnabled and "ON ✅" or "OFF ❌")
@@ -966,6 +995,31 @@ task.spawn(function()
         btLbl.Text=string.format("BT: %s  (x%s  +%s/s)", fmtNum(bt), fmtNum(btM), fmtNum(btRate))
         fsLbl.Text=string.format("FS: %s  (x%s  +%s/s)", fmtNum(fs), fmtNum(fsM), fmtNum(fsRate))
         psLbl.Text=string.format("PS: %s  (x%s  +%s/s)", fmtNum(ps), fmtNum(psM), fmtNum(psRate))
+        local jf  = tonumber(LP:GetAttribute("JumpForce")) or 0
+        local jfM = LP:GetAttribute("JumpForceMultiplier") or 1
+        local jp  = tonumber(LP:GetAttribute("JumpPower")) or 0
+        jfLbl.Text = string.format("JF: %s  (x%s)", fmtNum(jf), fmtNum(jfM))
+        if _G.ActiveTrainer == "JF" then
+            local wi = getBestWeightIndex()
+            weightLbl.Text = "Weight: " .. (wi > 0 and weightData[wi].title or "Unequipped") .. "  JP:" .. fmtNum(jp)
+            weightLbl.TextColor3 = Color3.fromRGB(180,220,100)
+        else
+            weightLbl.Text = "Weight: ---"
+            weightLbl.TextColor3 = Color3.fromRGB(100,100,100)
+        end
+        local jf  = tonumber(LP:GetAttribute("JumpForce")) or 0
+        local jfM = LP:GetAttribute("JumpForceMultiplier") or 1
+        local jp  = tonumber(LP:GetAttribute("JumpPower")) or 0
+        jfLbl.Text  = string.format("JF: %s  (x%s)", fmtNum(jf), fmtNum(jfM))
+        if _G.ActiveTrainer == "JF" then
+            local wi = getBestWeightIndex()
+            local wt = wi > 0 and weightData[wi].title or "Unequipped"
+            weightLbl.Text = "Weight: " .. wt .. "  JP:" .. fmtNum(jp)
+            weightLbl.TextColor3 = Color3.fromRGB(180,220,100)
+        else
+            weightLbl.Text = "Weight: ---"
+            weightLbl.TextColor3 = Color3.fromRGB(100,100,100)
+        end
 
         -- fusion tracker
         local tp=tonumber(LP:GetAttribute("TotalPower")) or 0
@@ -1104,6 +1158,98 @@ task.spawn(function()
     end
 end)
 
+
+
+-- WEIGHT DATA
+local weightData = {
+    {title="100 LB",   req=100},
+    {title="1 TON",    req=5000},
+    {title="10 TON",   req=500000},
+    {title="100 TON",  req=10000000},
+    {title="1K TON",   req=100000000},
+    {title="10K TON",  req=1000000000},
+    {title="100K TON", req=10000000000},
+    {title="1M TON",   req=100000000000},
+    {title="10M TON",  req=1000000000000},
+    {title="100M TON", req=10000000000000},
+    {title="1B TON",   req=100000000000000},
+    {title="10B TON",  req=1000000000000000},
+}
+
+local function getBestWeightIndex()
+    local jp = tonumber(LP:GetAttribute("JumpPower")) or 0
+    local best = 0
+    for i, w in ipairs(weightData) do
+        if jp >= w.req then best = i end
+    end
+    return best
+end
+
+-- JF TRAINER LOOP (VIM + Heartbeat, requires BT or FS active)
+task.spawn(function()
+    local jfConn = nil
+    local lastWeightIdx = -1
+
+    local function hookJF()
+        if jfConn then jfConn:Disconnect(); jfConn = nil end
+        local char = LP.Character or LP.CharacterAdded:Wait()
+        local hum = char:WaitForChild("Humanoid", 10)
+        if not hum then return end
+        local lastState = hum:GetState()
+        local newIdx = getBestWeightIndex()
+        SetWeight:FireServer(newIdx)
+        lastWeightIdx = newIdx
+        warn(string.format("[JF] Started - weight: %s", newIdx > 0 and weightData[newIdx].title or "Unequipped"))
+        jfConn = game:GetService("RunService").Heartbeat:Connect(function()
+            if _G.ActiveTrainer ~= "JF" then lastState = hum:GetState(); return end
+            local curIdx = getBestWeightIndex()
+            if curIdx ~= lastWeightIdx then
+                SetWeight:FireServer(curIdx)
+                lastWeightIdx = curIdx
+                warn(string.format("[JF] Weight upgraded: %s", curIdx > 0 and weightData[curIdx].title or "Unequipped"))
+            end
+            local state = hum:GetState()
+            if state == Enum.HumanoidStateType.Landed and lastState ~= Enum.HumanoidStateType.Landed then
+                JF_Train:FireServer()
+                task.delay(0.06, function()
+                    if _G.ActiveTrainer == "JF" then
+                        VIM:SendKeyEvent(true,  Enum.KeyCode.Space, false, game)
+                        task.wait(0.05)
+                        VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+                    end
+                end)
+            end
+            lastState = state
+        end)
+        task.delay(0.1, function()
+            if _G.ActiveTrainer == "JF" then
+                VIM:SendKeyEvent(true,  Enum.KeyCode.Space, false, game)
+                task.wait(0.05)
+                VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+            end
+        end)
+    end
+
+    local wasJF = false
+    game:GetService("RunService").Heartbeat:Connect(function()
+        local isJF = (_G.ActiveTrainer == "JF")
+        if isJF and not wasJF then
+            hookJF()
+        elseif not isJF and wasJF then
+            if jfConn then jfConn:Disconnect(); jfConn = nil end
+            SetWeight:FireServer(0)
+            lastWeightIdx = -1
+            warn("[JF] Stopped - weight unequipped")
+        end
+        wasJF = isJF
+    end)
+
+    LP.CharacterAdded:Connect(function()
+        task.wait(1.5)
+        lastWeightIdx = -1
+        if _G.ActiveTrainer == "JF" then hookJF() end
+    end)
+end)
 warn("[AG] Ready — BT:"..#btAreas.." FS:"..#fsAreas.." PS:"..#psAreas.." zones")
 warn("[AutoRespawn] Active")
 warn("[LineShotNuker] Ready")
