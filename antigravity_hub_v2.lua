@@ -757,7 +757,6 @@ end
 local spoofEnabled = false
 local fakeName = ""
 local fakeSquad = ""
-local spoofConn = nil
 local plNameLabel = nil      -- cached CoreGui PlayerList label
 local plNameConn  = nil      -- changed signal connection
 
@@ -802,7 +801,12 @@ local function buildSpoofRefs()
                 end
             end
         end
-        refs.leaderOriginal = refs.leaderLabel and refs.leaderLabel.Text or ""
+        refs.leaderOriginal  = refs.leaderLabel and refs.leaderLabel.Text or ""
+        refs.origSquad      = refs.gangLabel  and refs.gangLabel.Text:match("Squad : (.+)") or ""
+        refs.origGangName   = refs.gangName   and refs.gangName.Text:match("Squad Name : (.+)") or ""
+        refs.origNotice1    = refs.notice1    and refs.notice1.Text or ""
+        refs.origNotice2    = refs.notice2    and refs.notice2.Text or ""
+        refs.origOverheadG  = refs.overheadGang and refs.overheadGang.Text or ""
     end
     -- overhead billboard
     local char = LP.Character
@@ -832,14 +836,14 @@ end
 local function revertSpoof(refs)
     if not refs then return end
     if refs.nameLabel    then refs.nameLabel.Text    = "Name : " .. LP.Name end
-    if refs.gangLabel    then refs.gangLabel.Text    = "Squad : ApexKnight" end
-    if refs.gangName     then refs.gangName.Text     = "Squad Name : ApexKnight" end
+    if refs.gangLabel    then refs.gangLabel.Text    = "Squad : "      .. refs.origSquad    end
+    if refs.gangName     then refs.gangName.Text     = "Squad Name : " .. refs.origGangName  end
     if refs.leaderLabel  then refs.leaderLabel.Text  = refs.leaderOriginal or "" end
-    if refs.notice1      then refs.notice1.Text      = "Welcome to ApexKnight!" end
-    if refs.notice2      then refs.notice2.Text      = "Welcome to ApexKnight!" end
+    if refs.notice1      then refs.notice1.Text      = refs.origNotice1 end
+    if refs.notice2      then refs.notice2.Text      = refs.origNotice2 end
     if refs.memberRows   then for _, row in ipairs(refs.memberRows) do row.label.Text = row.original end end
     if refs.overheadName then refs.overheadName.Text = LP.Name end
-    if refs.overheadGang then refs.overheadGang.Text = "[Member] ApexKnight" end
+    if refs.overheadGang then refs.overheadGang.Text = refs.origOverheadG end
     -- revert CoreGui playerlist label
     if plNameLabel and plNameLabel.Parent then plNameLabel.Text = LP.DisplayName end
     if plNameConn then plNameConn:Disconnect(); plNameConn = nil end
@@ -883,12 +887,33 @@ spoofToggle.MouseButton1Click:Connect(function()
                 end
             end
         end
-        if spoofConn then spoofConn:Disconnect() end
-        spoofConn = game:GetService("RunService").Heartbeat:Connect(function()
-            applySpoof(spoofRefs)
-        end)
+        -- hook each label with GetPropertyChangedSignal instead of Heartbeat
+        if spoofRefs then
+            spoofRefs.conns = {}
+            local function hookLabel(lbl, getter)
+                if not lbl then return end
+                table.insert(spoofRefs.conns, lbl:GetPropertyChangedSignal("Text"):Connect(function()
+                    if spoofEnabled then local v = getter() if lbl.Text ~= v then lbl.Text = v end end
+                end))
+            end
+            hookLabel(spoofRefs.nameLabel,   function() return "Name : "       .. fakeName  end)
+            hookLabel(spoofRefs.gangLabel,    function() return "Squad : "      .. fakeSquad end)
+            hookLabel(spoofRefs.gangName,     function() return "Squad Name : " .. fakeSquad end)
+            hookLabel(spoofRefs.leaderLabel,  function() return "Leader : "     .. (spoofRefs.memberRows and spoofRefs.memberRows[1] and spoofRefs.memberRows[1].fake or fakeName) end)
+            hookLabel(spoofRefs.notice1,      function() return "Welcome to "   .. fakeSquad .. "!" end)
+            hookLabel(spoofRefs.notice2,      function() return "Welcome to "   .. fakeSquad .. "!" end)
+            hookLabel(spoofRefs.overheadName, function() return fakeName end)
+            hookLabel(spoofRefs.overheadGang, function() return "[Member] " .. fakeSquad end)
+            if spoofRefs.memberRows then
+                for _, row in ipairs(spoofRefs.memberRows) do
+                    local r = row
+                    hookLabel(r.label, function() return r.fake end)
+                end
+            end
+        end
     else
-        if spoofConn then spoofConn:Disconnect(); spoofConn = nil end
+        -- disconnect all label signal hooks
+        if spoofRefs and spoofRefs.conns then for _, c in ipairs(spoofRefs.conns) do c:Disconnect() end spoofRefs.conns = nil end
         revertSpoof(spoofRefs)
         spoofRefs = nil
     end
@@ -1179,6 +1204,14 @@ end)
 task.spawn(function()
     local jfConn = nil
     local lastWeightIdx = -1
+    local UIS = game:GetService("UserInputService")
+
+    local function doJump()
+        if not _G.JFEnabled then return end
+        VIM:SendKeyEvent(true,  Enum.KeyCode.Space, false, game)
+        task.wait(0.05)
+        VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+    end
 
     local function hookJF()
         if jfConn then jfConn:Disconnect(); jfConn = nil end
@@ -1189,6 +1222,7 @@ task.spawn(function()
         local newIdx = getBestWeightIndex()
         SetWeight:FireServer(newIdx)
         lastWeightIdx = newIdx
+        local lastJumpTime = tick()
         warn(string.format("[JF] Started - weight: %s", newIdx > 0 and weightData[newIdx].title or "Unequipped"))
         jfConn = game:GetService("RunService").Heartbeat:Connect(function()
             if not _G.JFEnabled then lastState = hum:GetState(); return end
@@ -1201,24 +1235,28 @@ task.spawn(function()
             local state = hum:GetState()
             if state == Enum.HumanoidStateType.Landed and lastState ~= Enum.HumanoidStateType.Landed then
                 JF_Train:FireServer()
-                task.delay(0.06, function()
-                    if _G.JFEnabled then
-                        VIM:SendKeyEvent(true,  Enum.KeyCode.Space, false, game)
-                        task.wait(0.05)
-                        VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-                    end
-                end)
+                lastJumpTime = tick()
+                task.delay(0.06, function() doJump() end)
+            end
+            -- watchdog: if grounded >1.5s without a jump (e.g. CoreGui stole focus), force re-jump
+            local stateVal = typeof(state) == "number" and state or state.Value
+            if stateVal == 14 and (tick() - lastJumpTime) > 1.5 then  -- 14 = Landed
+                lastJumpTime = tick()
+                JF_Train:FireServer()
+                task.delay(0.06, function() doJump() end)
             end
             lastState = state
         end)
-        task.delay(0.1, function()
-            if _G.JFEnabled then
-                VIM:SendKeyEvent(true,  Enum.KeyCode.Space, false, game)
-                task.wait(0.05)
-                VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-            end
-        end)
+        task.delay(0.1, function() doJump() end)
     end
+
+    -- re-kick jump when CoreGui modal closes (Esc menu, chat, etc.)
+    UIS:GetPropertyChangedSignal("ModalEnabled"):Connect(function()
+        if not _G.JFEnabled then return end
+        if not UIS.ModalEnabled then
+            task.delay(0.15, function() doJump() end)
+        end
+    end)
 
     local wasJF = false
     game:GetService("RunService").Heartbeat:Connect(function()
