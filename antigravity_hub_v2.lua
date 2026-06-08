@@ -30,6 +30,7 @@ _G.ActiveTrainer      = nil   -- "BT" | "FS" | "PS" | nil
 _G.AutoRespawnEnabled = true
 _G.ARTeleportBack     = true
 _G.AutoQuestEnabled   = true
+_G.JFEnabled          = false
 if _G.hubKillFlag then _G.hubKillFlag() end
 local hubAlive = true
 _G.nukerRunning = false
@@ -223,6 +224,7 @@ if not _svOk then warn('[Settings] Load error: ' .. tostring(_svErr)) end
 if _sv then warn('[Settings] Loaded from disk OK') else warn('[Settings] No save file, using defaults') end
 if _sv then
     _G.ActiveTrainer      = lS(_sv, "activeTrainer")
+    if _G.ActiveTrainer == "JF" then _G.ActiveTrainer = nil end  -- JF is no longer a valid ActiveTrainer value
     _G.AutoRespawnEnabled = lB(_sv, "autoRespawn",    true)
     _G.ARTeleportBack     = lB(_sv, "arTeleportBack", true)
     _G.AutoQuestEnabled   = lB(_sv, "autoQuest",      true)
@@ -241,12 +243,13 @@ if _sv then
     antiIdle     = lB(_sv, "antiIdle",     true)
     autoSkipWeak = lB(_sv, "autoSkipWeak", true)
     priorityMode = lB(_sv, "priorityMode", true)
+    _G.JFEnabled  = lB(_sv, "jfEnabled",     false)
 end
 local function saveSettings()
     local at = _G.ActiveTrainer and ('"' .. _G.ActiveTrainer .. '"') or "null"
     local et = enabledTargets
     local json = string.format(
-        '{"activeTrainer":%s,"autoRespawn":%s,"arTeleportBack":%s,"autoQuest":%s,"teleportMode":%s,"antiIdle":%s,"nukerRunning":%s,"autoSkipWeak":%s,"priorityMode":%s,"Noob":%s,"Thug":%s,"Mafia":%s,"WereWolf":%s,"Robot":%s,"Sath":%s,"Phantom":%s}',
+        '{"activeTrainer":%s,"autoRespawn":%s,"arTeleportBack":%s,"autoQuest":%s,"teleportMode":%s,"antiIdle":%s,"nukerRunning":%s,"autoSkipWeak":%s,"priorityMode":%s,"jfEnabled":%s,"Noob":%s,"Thug":%s,"Mafia":%s,"WereWolf":%s,"Robot":%s,"Sath":%s,"Phantom":%s}',
         at,
         tostring(_G.AutoRespawnEnabled),
         tostring(_G.ARTeleportBack),
@@ -256,6 +259,7 @@ local function saveSettings()
         tostring(nukerRunning),
         tostring(autoSkipWeak),
         tostring(priorityMode),
+        tostring(_G.JFEnabled == true),
         tostring(manualTargets.Noob),
         tostring(manualTargets.Thug),
         tostring(manualTargets.Mafia),
@@ -562,17 +566,21 @@ local trainerColors = {
 
 local function refreshTrainerBtns()
     for key, btn in pairs(trainerBtns) do
-        local on = (_G.ActiveTrainer == key)
+        local on = (key == "JF") and (_G.JFEnabled == true) or (_G.ActiveTrainer == key)
         btn.Text = trainerLabels[key] .. ": " .. (on and "ON ✅" or "OFF ❌")
         TweenService:Create(btn,TweenInfo.new(0.15),{BackgroundColor3=on and trainerColors[key] or Color3.fromRGB(52,52,62)}):Play()
     end
 end
 
 local function setTrainer(key)
-    if _G.ActiveTrainer == key then
-        _G.ActiveTrainer = nil
+    if key == "JF" then
+        _G.JFEnabled = not _G.JFEnabled
     else
-        _G.ActiveTrainer = key
+        if _G.ActiveTrainer == key then
+            _G.ActiveTrainer = nil
+        else
+            _G.ActiveTrainer = key
+        end
     end
     refreshTrainerBtns()
     saveSettings()
@@ -580,12 +588,16 @@ end
 
 btBtn.MouseButton1Click:Connect(function() setTrainer("BT") end)
 fsBtn.MouseButton1Click:Connect(function() setTrainer("FS") end)
-psBtn.MouseButton1Click:Connect(function() setTrainer("PS") end)
+psBtn.MouseButton1Click:Connect(function()
+    if _G.JFEnabled then
+        warn("[PS] Cannot switch to PS while JF is active! Disable JF first.")
+        return
+    end
+    setTrainer("PS")
+end)
 jfBtn.MouseButton1Click:Connect(function()
-    local active = _G.ActiveTrainer
-    -- JF only works with BT or FS active
-    if active ~= "BT" and active ~= "FS" then
-        warn("[JF] Enable BT or FS trainer first!")
+    if _G.ActiveTrainer == "PS" and not _G.JFEnabled then
+        warn("[JF] Cannot use JF with PS active!")
         return
     end
     setTrainer("JF")
@@ -948,6 +960,31 @@ task.spawn(function()
     end
 end)
 
+-- WEIGHT DATA
+local weightData = {
+    {title="100 LB",   req=100},
+    {title="1 TON",    req=5000},
+    {title="10 TON",   req=500000},
+    {title="100 TON",  req=10000000},
+    {title="1K TON",   req=100000000},
+    {title="10K TON",  req=1000000000},
+    {title="100K TON", req=10000000000},
+    {title="1M TON",   req=100000000000},
+    {title="10M TON",  req=1000000000000},
+    {title="100M TON", req=10000000000000},
+    {title="1B TON",   req=100000000000000},
+    {title="10B TON",  req=1000000000000000},
+}
+
+local function getBestWeightIndex()
+    local jf = tonumber(LP:GetAttribute("JumpForce")) or 0
+    local best = 0
+    for i, w in ipairs(weightData) do
+        if jf >= w.req then best = i end
+    end
+    return best
+end
+
 -- HUB LOOP
 task.spawn(function()
     local activeArea   = nil
@@ -987,10 +1024,10 @@ task.spawn(function()
         local jfM = LP:GetAttribute("JumpForceMultiplier") or 1
         local jp  = tonumber(LP:GetAttribute("JumpPower")) or 0
         jfLbl.Text  = string.format("JF: %s  (x%s)", fmtNum(jf), fmtNum(jfM))
-        if _G.ActiveTrainer == "JF" then
+        if _G.JFEnabled then
             local wi = getBestWeightIndex()
             local wt = wi > 0 and weightData[wi].title or "Unequipped"
-            weightLbl.Text = "Weight: " .. wt .. "  JP:" .. fmtNum(jp)
+            weightLbl.Text = "Weight: " .. wt .. "  JF:" .. fmtNum(jf)
             weightLbl.TextColor3 = Color3.fromRGB(180,220,100)
         else
             weightLbl.Text = "Weight: ---"
@@ -1041,8 +1078,10 @@ task.spawn(function()
         end
 
         local cfg=trainerConfig[key]
+        if not cfg or not cfg.areas then continue end  -- safety: JF has no areas, should never reach here
         local statVal=tonumber(LP:GetAttribute(cfg.stat)) or 0
-        local statRate=key=="BT" and btRate or key=="FS" and fsRate or psRate
+        local statRate = key=="BT" and btRate or key=="FS" and fsRate or key=="PS" and psRate or 0
+
 
         local bestArea
         if key == "BT" then
@@ -1136,31 +1175,6 @@ end)
 
 
 
--- WEIGHT DATA
-local weightData = {
-    {title="100 LB",   req=100},
-    {title="1 TON",    req=5000},
-    {title="10 TON",   req=500000},
-    {title="100 TON",  req=10000000},
-    {title="1K TON",   req=100000000},
-    {title="10K TON",  req=1000000000},
-    {title="100K TON", req=10000000000},
-    {title="1M TON",   req=100000000000},
-    {title="10M TON",  req=1000000000000},
-    {title="100M TON", req=10000000000000},
-    {title="1B TON",   req=100000000000000},
-    {title="10B TON",  req=1000000000000000},
-}
-
-local function getBestWeightIndex()
-    local jp = tonumber(LP:GetAttribute("JumpPower")) or 0
-    local best = 0
-    for i, w in ipairs(weightData) do
-        if jp >= w.req then best = i end
-    end
-    return best
-end
-
 -- JF TRAINER LOOP (VIM + Heartbeat, requires BT or FS active)
 task.spawn(function()
     local jfConn = nil
@@ -1177,7 +1191,7 @@ task.spawn(function()
         lastWeightIdx = newIdx
         warn(string.format("[JF] Started - weight: %s", newIdx > 0 and weightData[newIdx].title or "Unequipped"))
         jfConn = game:GetService("RunService").Heartbeat:Connect(function()
-            if _G.ActiveTrainer ~= "JF" then lastState = hum:GetState(); return end
+            if not _G.JFEnabled then lastState = hum:GetState(); return end
             local curIdx = getBestWeightIndex()
             if curIdx ~= lastWeightIdx then
                 SetWeight:FireServer(curIdx)
@@ -1188,7 +1202,7 @@ task.spawn(function()
             if state == Enum.HumanoidStateType.Landed and lastState ~= Enum.HumanoidStateType.Landed then
                 JF_Train:FireServer()
                 task.delay(0.06, function()
-                    if _G.ActiveTrainer == "JF" then
+                    if _G.JFEnabled then
                         VIM:SendKeyEvent(true,  Enum.KeyCode.Space, false, game)
                         task.wait(0.05)
                         VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
@@ -1198,7 +1212,7 @@ task.spawn(function()
             lastState = state
         end)
         task.delay(0.1, function()
-            if _G.ActiveTrainer == "JF" then
+            if _G.JFEnabled then
                 VIM:SendKeyEvent(true,  Enum.KeyCode.Space, false, game)
                 task.wait(0.05)
                 VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
@@ -1208,7 +1222,7 @@ task.spawn(function()
 
     local wasJF = false
     game:GetService("RunService").Heartbeat:Connect(function()
-        local isJF = (_G.ActiveTrainer == "JF")
+        local isJF = (_G.JFEnabled == true)
         if isJF and not wasJF then
             hookJF()
         elseif not isJF and wasJF then
@@ -1223,28 +1237,10 @@ task.spawn(function()
     LP.CharacterAdded:Connect(function()
         task.wait(1.5)
         lastWeightIdx = -1
-        if _G.ActiveTrainer == "JF" then hookJF() end
+        if _G.JFEnabled then hookJF() end
     end)
 end)
 warn("[AG] Ready — BT:"..#btAreas.." FS:"..#fsAreas.." PS:"..#psAreas.." zones")
 warn("[AutoRespawn] Active")
 warn("[LineShotNuker] Ready")
 warn("[FusionTracker] Active")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
