@@ -15,7 +15,6 @@ local CG           = game:GetService("CoreGui")
 local Lighting     = game:GetService("Lighting")
 local VirtualUser      = game:GetService("VirtualUser")
 local VIM              = game:GetService("VirtualInputManager")
-local VIM              = game:GetService("VirtualInputManager")
 local LP           = Players.LocalPlayer
 local PG           = LP:WaitForChild("PlayerGui")
 local Camera       = workspace.CurrentCamera
@@ -25,7 +24,6 @@ local RefreshCharacter = RemoteEvents.RefreshCharacter
 local Loaded           = RemoteEvents.Loaded
 local UseSkill         = RemoteEvents.UseSkill
 local JF_Train         = RemoteEvents.JF_Train
-local SetWeight        = RemoteEvents.SetWeight
 local SetWeight        = RemoteEvents.SetWeight
 
 _G.ActiveTrainer      = nil   -- "BT" | "FS" | "PS" | nil
@@ -517,7 +515,7 @@ local btnW = math.floor((iw - 12) / 4)
 local btBtn = mkHBtn(pad,              btnW, 6, 32)
 local fsBtn = mkHBtn(pad+btnW+4,       btnW, 6, 32)
 local psBtn = mkHBtn(pad+btnW*2+8,     btnW, 6, 32)
-local jfBtn = mkHBtn(pad+btnW*3+12,    btnW, 6, 32)'
+local jfBtn = mkHBtn(pad+btnW*3+12,    btnW, 6, 32)
 -- Row 2: AR toggle + TP back
 local arBtn=mkHBtn(pad, math.floor(iw/2)-2, 42, 28)
 local tpBackBtn=mkHBtn(pad+math.floor(iw/2)+2, math.floor(iw/2)-2, 42, 28)
@@ -532,8 +530,6 @@ local modeLbl  = mkHL(130,  18, "Mode: ---",           dz)
 local btLbl    = mkHL(148, 18, "BT: ...",             Color3.fromRGB(255,140,50))
 local fsLbl    = mkHL(166, 18, "FS: ...",             Color3.fromRGB(100,180,255))
 local psLbl    = mkHL(184, 18, "PS: ...",             Color3.fromRGB(200,100,255))
-local jfLbl    = mkHL(202, 18, "JF: ...",             Color3.fromRGB(80,220,120))
-local weightLbl= mkHL(220, 18, "Weight: ---",          Color3.fromRGB(180,220,100))
 local jfLbl    = mkHL(202, 18, "JF: ...",             Color3.fromRGB(80,220,120))
 local weightLbl= mkHL(220, 18, "Weight: ---",          Color3.fromRGB(180,220,100))
 local hpLbl    = mkHL(238, 18, "HP: ...",             dz)
@@ -557,7 +553,7 @@ mkHL(466,14,"Antigravity 💜  |  BT:"..#btAreas.."  FS:"..#fsAreas.."  PS:"..#p
 local trainerBtns = {BT=btBtn, FS=fsBtn, PS=psBtn, JF=jfBtn}
 local trainerLabels = {BT="💪 BT", FS="👊 FS", PS="🔮 PS", JF="🦘 JF"}
 
-    JF = Color3.fromRGB(20,130,60),
+local trainerColors = {
     JF = Color3.fromRGB(20,130,60),
     BT = Color3.fromRGB(38,105,42),
     FS = Color3.fromRGB(30,90,160),
@@ -585,14 +581,6 @@ end
 btBtn.MouseButton1Click:Connect(function() setTrainer("BT") end)
 fsBtn.MouseButton1Click:Connect(function() setTrainer("FS") end)
 psBtn.MouseButton1Click:Connect(function() setTrainer("PS") end)
-jfBtn.MouseButton1Click:Connect(function()
-    local active = _G.ActiveTrainer
-    if active ~= "BT" and active ~= "FS" then
-        warn("[JF] Turn on BT or FS first!")
-        return
-    end
-    setTrainer("JF")
-end)
 jfBtn.MouseButton1Click:Connect(function()
     local active = _G.ActiveTrainer
     -- JF only works with BT or FS active
@@ -998,18 +986,6 @@ task.spawn(function()
         local jf  = tonumber(LP:GetAttribute("JumpForce")) or 0
         local jfM = LP:GetAttribute("JumpForceMultiplier") or 1
         local jp  = tonumber(LP:GetAttribute("JumpPower")) or 0
-        jfLbl.Text = string.format("JF: %s  (x%s)", fmtNum(jf), fmtNum(jfM))
-        if _G.ActiveTrainer == "JF" then
-            local wi = getBestWeightIndex()
-            weightLbl.Text = "Weight: " .. (wi > 0 and weightData[wi].title or "Unequipped") .. "  JP:" .. fmtNum(jp)
-            weightLbl.TextColor3 = Color3.fromRGB(180,220,100)
-        else
-            weightLbl.Text = "Weight: ---"
-            weightLbl.TextColor3 = Color3.fromRGB(100,100,100)
-        end
-        local jf  = tonumber(LP:GetAttribute("JumpForce")) or 0
-        local jfM = LP:GetAttribute("JumpForceMultiplier") or 1
-        local jp  = tonumber(LP:GetAttribute("JumpPower")) or 0
         jfLbl.Text  = string.format("JF: %s  (x%s)", fmtNum(jf), fmtNum(jfM))
         if _G.ActiveTrainer == "JF" then
             local wi = getBestWeightIndex()
@@ -1254,3 +1230,21 @@ warn("[AG] Ready — BT:"..#btAreas.." FS:"..#fsAreas.." PS:"..#psAreas.." zones
 warn("[AutoRespawn] Active")
 warn("[LineShotNuker] Ready")
 warn("[FusionTracker] Active")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
