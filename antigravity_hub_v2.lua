@@ -24,6 +24,7 @@ local RefreshCharacter = RemoteEvents.RefreshCharacter
 local Loaded           = RemoteEvents.Loaded
 local UseSkill         = RemoteEvents.UseSkill
 local JF_Train         = RemoteEvents.JF_Train
+local FS_Train         = RemoteEvents.FS_Train
 local SetWeight        = RemoteEvents.SetWeight
 
 _G.ActiveTrainer      = nil   -- "BT" | "FS" | "PS" | nil
@@ -31,6 +32,8 @@ _G.AutoRespawnEnabled = true
 _G.ARTeleportBack     = true
 _G.AutoQuestEnabled   = true
 _G.JFEnabled          = false
+local fsAutoClick     = false
+local fsClickInterval = 0.1  -- seconds between FS_Train fires
 if _G.hubKillFlag then _G.hubKillFlag() end
 local hubAlive = true
 _G.nukerRunning = false
@@ -161,12 +164,9 @@ local trainerConfig = {
 }
 
 local function getAreaLandCFrame(a)
-    -- Land just inside the top surface of the part using local space.
-    -- halfY - 1 keeps us inside the hitbox bounds (avoids the +3 overshoot bug).
     return a.part.CFrame * CFrame.new(0, a.halfY - 1, 0)
 end
 
--- Returns true if the player is inside the training area part (proper OBB check)
 local function isInsideArea(pos, a)
     local localPos = a.part.CFrame:PointToObjectSpace(pos)
     local half = a.part.Size / 2
@@ -206,7 +206,6 @@ local tokenPriority  = {"Phantom","Robot","Sath","WereWolf","Mafia","Thug","Noob
 local tokenValues    = {Phantom=25e12,Robot=1e12,Sath=1e6,WereWolf=500000,Mafia=200000,Thug=10000,Noob=1000}
 local trackable      = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=true,Sath=true,Phantom=true}
 local enabledTargets = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=false,Sath=true,Phantom=true}
--- manualTargets mirrors enabledTargets but is only written on manual button press, never by auto-skip
 local manualTargets = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=false,Sath=true,Phantom=true}
 -- SETTINGS PERSISTENCE
 local SETTINGS_FILE = "ag_hub_settings.json"
@@ -224,7 +223,7 @@ if not _svOk then warn('[Settings] Load error: ' .. tostring(_svErr)) end
 if _sv then warn('[Settings] Loaded from disk OK') else warn('[Settings] No save file, using defaults') end
 if _sv then
     _G.ActiveTrainer      = lS(_sv, "activeTrainer")
-    if _G.ActiveTrainer == "JF" then _G.ActiveTrainer = nil end  -- JF is no longer a valid ActiveTrainer value
+    if _G.ActiveTrainer == "JF" then _G.ActiveTrainer = nil end
     _G.AutoRespawnEnabled = lB(_sv, "autoRespawn",    true)
     _G.ARTeleportBack     = lB(_sv, "arTeleportBack", true)
     _G.AutoQuestEnabled   = lB(_sv, "autoQuest",      true)
@@ -444,7 +443,6 @@ end
 if LP.Character then
     hookCharacter(LP.Character)
     fixCamera(LP.Character)
-    -- fire join-time loaded sequence so intro/blur clears without clicking
     task.spawn(function()
         task.wait(0.3)
         pcall(function() Loaded:FireServer() end)
@@ -462,7 +460,7 @@ pcall(function() sg.Parent=CG end); if not sg.Parent then sg.Parent=PG end
 local frameW=340; local pad=10; local iw=frameW-pad*2
 
 local mainFrame=Instance.new("Frame")
-mainFrame.Size=UDim2.new(0,frameW,0,596); mainFrame.Position=UDim2.new(0.05,0,0.05,0)
+mainFrame.Size=UDim2.new(0,frameW,0,618); mainFrame.Position=UDim2.new(0.05,0,0.05,0)
 mainFrame.BackgroundColor3=Color3.fromRGB(12,12,18); mainFrame.BorderSizePixel=0
 mainFrame.Active=true; mainFrame.Draggable=true; mainFrame.Parent=sg
 Instance.new("UICorner",mainFrame).CornerRadius=UDim.new(0,12)
@@ -514,44 +512,44 @@ local function mkHBtn(x,w,y,h)
     Instance.new("UICorner",b).CornerRadius=UDim.new(0,7); return b
 end
 
--- Row 1: trainer toggles (BT / FS / PS) — radio style, one at a time
 local btnW = math.floor((iw - 12) / 4)
 local btBtn = mkHBtn(pad,              btnW, 6, 32)
 local fsBtn = mkHBtn(pad+btnW+4,       btnW, 6, 32)
 local psBtn = mkHBtn(pad+btnW*2+8,     btnW, 6, 32)
 local jfBtn = mkHBtn(pad+btnW*3+12,    btnW, 6, 32)
--- Row 2: AR toggle + TP back
 local arBtn=mkHBtn(pad, math.floor(iw/2)-2, 42, 28)
 local tpBackBtn=mkHBtn(pad+math.floor(iw/2)+2, math.floor(iw/2)-2, 42, 28)
 local aqBtn=mkHBtn(pad, iw, 76, 28)
+-- FS AUTO CLICK BUTTON
+local fsClickBtn=mkHBtn(pad, iw, 108, 28)
 
-local hubDiv=Instance.new("Frame"); hubDiv.Size=UDim2.new(1,-20,0,1); hubDiv.Position=UDim2.new(0,pad,0,107)
+local hubDiv=Instance.new("Frame"); hubDiv.Size=UDim2.new(1,-20,0,1); hubDiv.Position=UDim2.new(0,pad,0,140)
 hubDiv.BackgroundColor3=Color3.fromRGB(55,45,75); hubDiv.BorderSizePixel=0; hubDiv.Parent=hubPanel
 
--- stat labels
-local areaLbl  = mkHL(112,  18, "Trainer: off",       dz)
-local modeLbl  = mkHL(130,  18, "Mode: ---",           dz)
-local btLbl    = mkHL(148, 18, "BT: ...",             Color3.fromRGB(255,140,50))
-local fsLbl    = mkHL(166, 18, "FS: ...",             Color3.fromRGB(100,180,255))
-local psLbl    = mkHL(184, 18, "PS: ...",             Color3.fromRGB(200,100,255))
-local jfLbl    = mkHL(202, 18, "JF: ...",             Color3.fromRGB(80,220,120))
-local weightLbl= mkHL(220, 18, "Weight: ---",          Color3.fromRGB(180,220,100))
-local hpLbl    = mkHL(238, 18, "HP: ...",             dz)
-local nextLbl  = mkHL(256, 18, "Next zone: ---",      Color3.fromRGB(170,160,200))
-local etaLbl   = mkHL(274, 18, "ETA: ---",            Color3.fromRGB(130,110,180))
-local stLbl    = mkHL(292, 18, "Status: idle",        Color3.fromRGB(170,160,190))
-local arLbl    = mkHL(310, 18, "AutoRespawn: on",     Color3.fromRGB(90,200,255))
+-- stat labels (shifted down 33px to make room for fsClickBtn)
+local areaLbl  = mkHL(145, 18, "Trainer: off",       dz)
+local modeLbl  = mkHL(163, 18, "Mode: ---",           dz)
+local btLbl    = mkHL(181, 18, "BT: ...",             Color3.fromRGB(255,140,50))
+local fsLbl    = mkHL(199, 18, "FS: ...",             Color3.fromRGB(100,180,255))
+local psLbl    = mkHL(217, 18, "PS: ...",             Color3.fromRGB(200,100,255))
+local jfLbl    = mkHL(235, 18, "JF: ...",             Color3.fromRGB(80,220,120))
+local weightLbl= mkHL(253, 18, "Weight: ---",          Color3.fromRGB(180,220,100))
+local hpLbl    = mkHL(271, 18, "HP: ...",             dz)
+local nextLbl  = mkHL(289, 18, "Next zone: ---",      Color3.fromRGB(170,160,200))
+local etaLbl   = mkHL(307, 18, "ETA: ---",            Color3.fromRGB(130,110,180))
+local stLbl    = mkHL(325, 18, "Status: idle",        Color3.fromRGB(170,160,190))
+local arLbl    = mkHL(343, 18, "AutoRespawn: on",     Color3.fromRGB(90,200,255))
 
-local fusDivider=Instance.new("Frame"); fusDivider.Size=UDim2.new(1,-20,0,1); fusDivider.Position=UDim2.new(0,pad,0,334)
+local fusDivider=Instance.new("Frame"); fusDivider.Size=UDim2.new(1,-20,0,1); fusDivider.Position=UDim2.new(0,pad,0,367)
 fusDivider.BackgroundColor3=Color3.fromRGB(80,50,120); fusDivider.BorderSizePixel=0; fusDivider.Parent=hubPanel
 
-mkHL(340,14,"✨  FUSION TRACKER",Color3.fromRGB(200,160,255),nil,true)
-local fusStatLbl=mkHL(358,18,"TP:  ---  [?]",  Color3.fromRGB(255,200,80))
-local fusReqLbl =mkHL(376,18,"Next: ---",       Color3.fromRGB(200,170,255))
-local fusPctLbl =mkHL(394,18,"Progress: ---",   Color3.fromRGB(100,220,100))
-local fusRateLbl=mkHL(412,18,"Rate:  ---",       Color3.fromRGB(160,200,255))
-local fusEtaLbl =mkHL(430,22,"ETA:   ---",       Color3.fromRGB(120,240,255),nil,true)
-mkHL(466,14,"Antigravity 💜  |  BT:"..#btAreas.."  FS:"..#fsAreas.."  PS:"..#psAreas.." zones",Color3.fromRGB(70,60,100),Enum.TextXAlignment.Center)
+mkHL(373,14,"✨  FUSION TRACKER",Color3.fromRGB(200,160,255),nil,true)
+local fusStatLbl=mkHL(391,18,"TP:  ---  [?]",  Color3.fromRGB(255,200,80))
+local fusReqLbl =mkHL(409,18,"Next: ---",       Color3.fromRGB(200,170,255))
+local fusPctLbl =mkHL(427,18,"Progress: ---",   Color3.fromRGB(100,220,100))
+local fusRateLbl=mkHL(445,18,"Rate:  ---",       Color3.fromRGB(160,200,255))
+local fusEtaLbl =mkHL(463,22,"ETA:   ---",       Color3.fromRGB(120,240,255),nil,true)
+mkHL(499,14,"Antigravity 💜  |  BT:"..#btAreas.."  FS:"..#fsAreas.."  PS:"..#psAreas.." zones",Color3.fromRGB(70,60,100),Enum.TextXAlignment.Center)
 
 -- TRAINER BUTTON LOGIC
 local trainerBtns = {BT=btBtn, FS=fsBtn, PS=psBtn, JF=jfBtn}
@@ -613,15 +611,24 @@ local function refreshTPBackBtn()
     tpBackBtn.Text="📍 TP Back: "..(_G.ARTeleportBack and "ON ✅" or "OFF ❌")
     tpBackBtn.BackgroundColor3=_G.ARTeleportBack and Color3.fromRGB(35,80,120) or Color3.fromRGB(45,45,55)
 end
-
 local function refreshAQBtn()
     aqBtn.Text="🎯 Auto Quest: "..(_G.AutoQuestEnabled and "ON ✅" or "OFF ❌")
     aqBtn.BackgroundColor3=_G.AutoQuestEnabled and Color3.fromRGB(30,120,80) or Color3.fromRGB(45,45,55)
 end
-refreshTrainerBtns(); refreshARBtn(); refreshTPBackBtn(); refreshAQBtn()
+local function refreshFSClickBtn()
+    fsClickBtn.Text="👊 FS Auto Click: "..(fsAutoClick and "ON ✅" or "OFF ❌")
+    fsClickBtn.BackgroundColor3=fsAutoClick and Color3.fromRGB(30,90,160) or Color3.fromRGB(45,45,55)
+end
+
+refreshTrainerBtns(); refreshARBtn(); refreshTPBackBtn(); refreshAQBtn(); refreshFSClickBtn()
 aqBtn.MouseButton1Click:Connect(function() _G.AutoQuestEnabled=not _G.AutoQuestEnabled refreshAQBtn() saveSettings() end)
 arBtn.MouseButton1Click:Connect(function() _G.AutoRespawnEnabled=not _G.AutoRespawnEnabled refreshARBtn() saveSettings() end)
 tpBackBtn.MouseButton1Click:Connect(function() _G.ARTeleportBack=not _G.ARTeleportBack refreshTPBackBtn() saveSettings() end)
+fsClickBtn.MouseButton1Click:Connect(function()
+    fsAutoClick = not fsAutoClick
+    refreshFSClickBtn()
+    warn("[FSClick] Auto Click " .. (fsAutoClick and "ON" or "OFF"))
+end)
 
 -- NUKER PANEL
 local nukerPanel=Instance.new("Frame")
@@ -704,7 +711,6 @@ skipBtn.MouseButton1Click:Connect(function()
     saveSettings()
 end)
 
--- sync nuker buttons to loaded settings
 do
     refreshModeButtons()
     prioBtn.BackgroundColor3=priorityMode and Color3.fromRGB(180,130,20) or Color3.fromRGB(55,55,55)
@@ -718,7 +724,6 @@ do
     skipBtn.Text=autoSkipWeak and "🟢  Active" or "⭕  Off"
 end
 local startBtn=Instance.new("TextButton"); startBtn.Size=UDim2.new(0,iw,0,34); startBtn.Position=UDim2.new(0,pad,0,392); startBtn.BackgroundColor3=Color3.fromRGB(40,180,80); startBtn.BorderSizePixel=0; startBtn.Font=Enum.Font.GothamBold; startBtn.TextSize=13; startBtn.TextColor3=Color3.fromRGB(255,255,255); startBtn.Text="▶  Start"; startBtn.Parent=nukerPanel; Instance.new("UICorner",startBtn).CornerRadius=UDim.new(0,6)
--- auto-start nuker if it was running on last session
 if nukerRunning then
     _G.nukerRunning = true
     startBtn.Text="■  Stop"; TweenService:Create(startBtn,TweenInfo.new(0),{BackgroundColor3=Color3.fromRGB(200,50,50)}):Play()
@@ -757,8 +762,8 @@ end
 local spoofEnabled = false
 local fakeName = ""
 local fakeSquad = ""
-local plNameLabel = nil      -- cached CoreGui PlayerList label
-local plNameConn  = nil      -- changed signal connection
+local plNameLabel = nil
+local plNameConn  = nil
 
 local spoofHeader = mkSL(6, 16, "USERNAME SPOOFER", Color3.fromRGB(200,160,255), true)
 local spoofStatusLbl = mkSL(26, 18, "Status: off", Color3.fromRGB(150,150,150))
@@ -768,7 +773,6 @@ local fakeSquadLbl = mkSL(64, 18, "Fake squad: ---", Color3.fromRGB(100,255,180)
 local spoofToggle = mkSBtn(88, 30, "🔴  Spoofer OFF", Color3.fromRGB(55,55,55))
 local rerollBtn = mkSBtn(124, 30, "🎲  Reroll Names", Color3.fromRGB(50,80,130))
 
--- cached label refs, resolved once when spoofer is enabled
 local spoofRefs = nil
 
 local function buildSpoofRefs()
@@ -790,7 +794,6 @@ local function buildSpoofRefs()
         local nf        = gf:FindFirstChild("NoticeFrame")
         refs.notice1    = nf and nf:FindFirstChild("Notice")
         refs.notice2    = nf and nf:FindFirstChild("NoticeForMember")
-        -- collect all member rows + their original names for revert
         refs.memberRows = {}
         local scroll = gf:FindFirstChild("MembersFrame") and gf.MembersFrame:FindFirstChild("Frame") and gf.MembersFrame.Frame:FindFirstChild("ScrollingFrame")
         if scroll then
@@ -808,7 +811,6 @@ local function buildSpoofRefs()
         refs.origNotice2    = refs.notice2    and refs.notice2.Text or ""
         refs.origOverheadG  = refs.overheadGang and refs.overheadGang.Text or ""
     end
-    -- overhead billboard
     local char = LP.Character
     local head = char and char:FindFirstChild("Head")
     local bb = head and head:FindFirstChild("OverheadBillboard")
@@ -844,7 +846,6 @@ local function revertSpoof(refs)
     if refs.memberRows   then for _, row in ipairs(refs.memberRows) do row.label.Text = row.original end end
     if refs.overheadName then refs.overheadName.Text = LP.Name end
     if refs.overheadGang then refs.overheadGang.Text = refs.origOverheadG end
-    -- revert CoreGui playerlist label
     if plNameLabel and plNameLabel.Parent then plNameLabel.Text = LP.DisplayName end
     if plNameConn then plNameConn:Disconnect(); plNameConn = nil end
     plNameLabel = nil
@@ -872,7 +873,6 @@ spoofToggle.MouseButton1Click:Connect(function()
         fakeSquad = randName(5, 10)
         spoofRefs = buildSpoofRefs()
         applySpoof(spoofRefs)
-        -- find and hook CoreGui playerlist label (display name, event-driven only)
         local pl = game:GetService("CoreGui"):FindFirstChild("PlayerList")
         if pl then
             for _, v in ipairs(pl:GetDescendants()) do
@@ -887,7 +887,6 @@ spoofToggle.MouseButton1Click:Connect(function()
                 end
             end
         end
-        -- hook each label with GetPropertyChangedSignal instead of Heartbeat
         if spoofRefs then
             spoofRefs.conns = {}
             local function hookLabel(lbl, getter)
@@ -912,7 +911,6 @@ spoofToggle.MouseButton1Click:Connect(function()
             end
         end
     else
-        -- disconnect all label signal hooks
         if spoofRefs and spoofRefs.conns then for _, c in ipairs(spoofRefs.conns) do c:Disconnect() end spoofRefs.conns = nil end
         revertSpoof(spoofRefs)
         spoofRefs = nil
@@ -1059,7 +1057,6 @@ task.spawn(function()
             weightLbl.TextColor3 = Color3.fromRGB(100,100,100)
         end
 
-        -- fusion tracker
         local tp=tonumber(LP:GetAttribute("TotalPower")) or 0
         local fusionName=tostring(LP:GetAttribute("FusionName") or "?")
         local nextTier=getNextFusionTier(); recordFusion(tp); local fusRate2=getFusionRate()
@@ -1086,7 +1083,6 @@ task.spawn(function()
             hpLbl.TextColor3=pct>0.6 and Color3.fromRGB(90,210,90) or pct>0.25 and Color3.fromRGB(255,185,50) or Color3.fromRGB(255,60,60)
         else hpLbl.Text="HP: dead"; hpLbl.TextColor3=Color3.fromRGB(200,60,60) end
 
-        -- trainer logic
         local key=_G.ActiveTrainer
         if not key then
             if activeArea then activeArea=nil; activeKey=nil end
@@ -1103,10 +1099,9 @@ task.spawn(function()
         end
 
         local cfg=trainerConfig[key]
-        if not cfg or not cfg.areas then continue end  -- safety: JF has no areas, should never reach here
+        if not cfg or not cfg.areas then continue end
         local statVal=tonumber(LP:GetAttribute(cfg.stat)) or 0
         local statRate = key=="BT" and btRate or key=="FS" and fsRate or key=="PS" and psRate or 0
-
 
         local bestArea
         if key == "BT" then
@@ -1119,7 +1114,6 @@ task.spawn(function()
         end
         local nextZone=getNextAreaFrom(cfg.areas, bestArea)
 
-        -- update next zone label
         if nextZone then
             local needed=(key == "BT" and nextZone.req/dtDivisor or nextZone.req) - statVal
             if needed<=0 then
@@ -1131,10 +1125,8 @@ task.spawn(function()
             end
         else nextLbl.Text="Next: ALL MAXED 🏆"; nextLbl.TextColor3=Color3.fromRGB(255,215,0); etaLbl.Text="" end
 
-        -- switch area if trainer changed or better area available
         if bestArea and (activeArea~=bestArea or activeKey~=key) then
             activeArea=bestArea; activeKey=key; _G.activeTrainArea=activeArea
-            -- Only teleport if not already inside the new area
             if not isInsideArea(crp.Position, activeArea) then
                 stLbl.Text="Status: teleporting to "..activeArea.name; stLbl.TextColor3=Color3.fromRGB(255,200,50)
                 crp.CFrame = getAreaLandCFrame(activeArea)
@@ -1146,7 +1138,6 @@ task.spawn(function()
             stLbl.Text="Status: stat too low for any zone"; stLbl.TextColor3=dz; continue
         end
 
-        -- Only teleport back if we are genuinely outside the hitbox
         if not isInsideArea(crp.Position, activeArea) then
             crp.CFrame = getAreaLandCFrame(activeArea)
         end
@@ -1198,9 +1189,17 @@ task.spawn(function()
     end
 end)
 
+-- FS AUTO CLICKER LOOP
+task.spawn(function()
+    while hubAlive do
+        task.wait(fsClickInterval)
+        if fsAutoClick and _G.ActiveTrainer == "FS" then
+            pcall(function() FS_Train:FireServer() end)
+        end
+    end
+end)
 
-
--- JF TRAINER LOOP (VIM + Heartbeat, requires BT or FS active)
+-- JF TRAINER LOOP
 task.spawn(function()
     local jfConn = nil
     local lastWeightIdx = -1
@@ -1238,9 +1237,8 @@ task.spawn(function()
                 lastJumpTime = tick()
                 task.delay(0.06, function() doJump() end)
             end
-            -- watchdog: if grounded >1.5s without a jump (e.g. CoreGui stole focus), force re-jump
             local stateVal = typeof(state) == "number" and state or state.Value
-            if stateVal == 14 and (tick() - lastJumpTime) > 1.5 then  -- 14 = Landed
+            if stateVal == 14 and (tick() - lastJumpTime) > 1.5 then
                 lastJumpTime = tick()
                 JF_Train:FireServer()
                 task.delay(0.06, function() doJump() end)
@@ -1250,7 +1248,6 @@ task.spawn(function()
         task.delay(0.1, function() doJump() end)
     end
 
-    -- re-kick jump when CoreGui modal closes (Esc menu, chat, etc.)
     UIS:GetPropertyChangedSignal("ModalEnabled"):Connect(function()
         if not _G.JFEnabled then return end
         if not UIS.ModalEnabled then
