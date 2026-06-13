@@ -27,13 +27,14 @@ local JF_Train         = RemoteEvents.JF_Train
 local FS_Train         = RemoteEvents.FS_Train
 local SetWeight        = RemoteEvents.SetWeight
 
-_G.ActiveTrainer      = nil   -- "BT" | "FS" | "PS" | nil
+_G.ActiveTrainer      = nil
 _G.AutoRespawnEnabled = true
 _G.ARTeleportBack     = true
 _G.AutoQuestEnabled   = true
 _G.JFEnabled          = false
+_G.isCapturingFort    = false
 local fsAutoClick     = false
-local fsClickInterval = 0.1  -- seconds between FS_Train fires
+local fsClickInterval = 0.1
 if _G.hubKillFlag then _G.hubKillFlag() end
 local hubAlive = true
 _G.nukerRunning = false
@@ -42,6 +43,7 @@ local function track(conn) table.insert(_G.hubConnections, conn); return conn en
 _G.hubKillFlag = function()
     hubAlive = false
     _G.nukerRunning = false
+    _G.isCapturingFort = false
     if _G.hubConnections then
         for _, c in ipairs(_G.hubConnections) do pcall(function() c:Disconnect() end) end
         _G.hubConnections = {}
@@ -51,7 +53,6 @@ end
 local lastDeathCFrame = nil
 local dtDivisor       = 20
 
--- SUFFIX TABLE
 local suffixes = {
     {"Qid",1e48},{"Qad",1e45},
     {"Td", 1e42},{"DD", 1e39},{"Ud", 1e36},
@@ -60,7 +61,7 @@ local suffixes = {
     {"T",  1e12},{"B",  1e9}, {"M",  1e6}, {"K",  1e3},
 }
 
-local function parseName(name)
+function parseName(name)
     for _, pair in ipairs(suffixes) do
         local n = name:match("^(%d+%.?%d*)" .. pair[1] .. "$")
         if n then return tonumber(n) * pair[2] end
@@ -68,7 +69,7 @@ local function parseName(name)
     return tonumber(name)
 end
 
-local function fmtNum(n)
+function fmtNum(n)
     if not n or n <= 0 then return "0" end
     for i = 1, #suffixes do
         if n >= suffixes[i][2] then
@@ -78,7 +79,7 @@ local function fmtNum(n)
     return tostring(math.floor(n))
 end
 
-local function fmtTime(secs)
+function fmtTime(secs)
     if secs <= 0 or secs ~= secs then return "now" end
     if secs > 86400*30 then return ">30d" end
     if secs > 86400 then return string.format("%.1fd", secs/86400) end
@@ -87,7 +88,6 @@ local function fmtTime(secs)
     return string.format("%.0fs", secs)
 end
 
--- FUSION
 local fusionTiers = {
     {name="Yeti",    req=1e18},
     {name="Werewolf",req=1e24},
@@ -104,7 +104,6 @@ local lastFusionTier = tonumber(LP:GetAttribute("FusionTier") or 0)
 
 local function recordFusion(tp)
     local now = tick()
-    -- wipe samples on rebirth so stale pre-rebirth TP doesnt corrupt rate/ETA
     local curTier = tonumber(LP:GetAttribute("FusionTier") or 0)
     if curTier ~= lastFusionTier then
         fusionSamples = {}
@@ -122,7 +121,7 @@ local function getFusionRate()
 end
 
 local function fmtETALong(secs)
-    if secs <= 0 or secs ~= secs then return "Ready! ✅" end
+    if secs <= 0 or secs ~= secs then return "Ready!" end
     if secs == math.huge then return "---" end
     local d=math.floor(secs/86400); local h=math.floor((secs%86400)/3600); local m=math.floor((secs%3600)/60)
     if d > 0 then return string.format("~%dd %dh", d, h) end
@@ -136,7 +135,6 @@ local function getNextFusionTier()
     return fusionTiers[tier + 1]
 end
 
--- LOAD TRAINING AREAS
 local hitboxes = game.Workspace:WaitForChild("Main"):WaitForChild("TrainingAreasHitBoxes")
 
 local function loadAreas(folderName)
@@ -164,7 +162,6 @@ local btAreas = loadAreas("BT")
 local fsAreas = loadAreas("FS")
 local psAreas = loadAreas("PS")
 
--- maps trainer key -> area list + stat attribute
 local trainerConfig = {
     BT = {areas=btAreas, stat="BodyToughness",   multiStat="BodyToughnessMultiplier",   color=Color3.fromRGB(255,140,50)},
     FS = {areas=fsAreas, stat="FistStrength",     multiStat="FistStrengthMultiplier",    color=Color3.fromRGB(100,180,255)},
@@ -200,7 +197,6 @@ local function getNextAreaFrom(areas, current)
     return nil
 end
 
--- NUKER CONFIG
 local burstSpeed     = 0.2
 local hoverHeight    = 15
 local behindDist     = 30
@@ -216,14 +212,14 @@ local tokenValues    = {Phantom=25e12,Robot=1e12,Sath=1e6,WereWolf=500000,Mafia=
 local trackable      = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=true,Sath=true,Phantom=true}
 local enabledTargets = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=false,Sath=true,Phantom=true}
 local manualTargets = {Noob=true,Thug=true,Mafia=true,WereWolf=true,Robot=false,Sath=true,Phantom=true}
--- SETTINGS PERSISTENCE
+
 local SETTINGS_FILE = "ag_hub_settings.json"
-local function lB(s, key, def)
+function lB(s, key, def)
     local v = s:match('"' .. key .. '":(%a+)')
     if v == "true" then return true elseif v == "false" then return false end
     return def
 end
-local function lS(s, key)
+function lS(s, key)
     return s:match('"' .. key .. '":"([^"]+)"')
 end
 local _sv = nil
@@ -397,9 +393,7 @@ track(workspace.DescendantAdded:Connect(function(child)
 end))
 
 task.spawn(buildCache)
--- periodic rescan removed: DescendantAdded handles all NPC registration (NPCs are depth-1, no missed spawns)
 
--- RESPAWN / CAMERA
 local function restoreUI()
     local pg=LP.PlayerGui
     for _,name in ipairs({"MainGui","QuestsGui","SkillCooldowns"}) do local gui=pg:FindFirstChild(name) if gui then gui.Enabled=true end end
@@ -426,19 +420,21 @@ local function hookCharacter(char)
     local hum=char:WaitForChild("Humanoid",10); if not hum then return end
     track(hum.Died:Connect(function()
         if not _G.AutoRespawnEnabled then return end
-        -- disable the game Died script instantly so its camera loop never runs
         pcall(function()
             local diedScript = char:FindFirstChild("Died")
             if diedScript then diedScript.Enabled = false end
         end)
         local crp=char:FindFirstChild("HumanoidRootPart"); if crp then lastDeathCFrame=crp.CFrame end
-        task.wait(0.05)
-        -- kill the game death tween immediately so camera snaps back on respawn
-        pcall(function()
-            game:GetService("TweenService"):Create(Camera, TweenInfo.new(0), {CFrame=Camera.CFrame}):Cancel()
-            Camera.CameraType = Enum.CameraType.Custom
-            LP.PlayerGui.IntroGui.Enabled = false
-            game:GetService("TweenService"):Create(game:GetService("Lighting").Blur, TweenInfo.new(0.15), {Size=0}):Play()
+        task.spawn(function()
+            for i=1,20 do
+                pcall(function()
+                    Camera.CameraType = Enum.CameraType.Custom
+                    game:GetService("TweenService"):Create(Camera, TweenInfo.new(0), {CFrame=Camera.CFrame}):Play()
+                    LP.PlayerGui.IntroGui.Enabled = false
+                    game:GetService("Lighting").Blur.Size = 0
+                end)
+                task.wait(0.05)
+            end
         end)
         RefreshCharacter:FireServer()
         local newChar=LP.CharacterAdded:Wait()
@@ -448,8 +444,7 @@ local function hookCharacter(char)
         task.wait(0.05)
         Loaded:FireServer()
         restoreUI()
-        if _G.ARTeleportBack and newCRP then
-
+        if _G.ARTeleportBack and newCRP and not _G.dtModeActive then
             if _G.activeTrainArea then
                 if not isInsideArea(newCRP.Position, _G.activeTrainArea) then
                     newCRP.CFrame = getAreaLandCFrame(_G.activeTrainArea)
@@ -497,7 +492,7 @@ Instance.new("UICorner",titleBar).CornerRadius=UDim.new(0,12)
 local titleLbl=Instance.new("TextLabel")
 titleLbl.Size=UDim2.new(1,-12,1,0); titleLbl.Position=UDim2.new(0,12,0,0); titleLbl.BackgroundTransparency=1
 titleLbl.Font=Enum.Font.GothamBold; titleLbl.TextSize=13; titleLbl.TextColor3=Color3.fromRGB(220,210,255)
-titleLbl.Text="🌌 Antigravity Hub  ⚡ Line Shot"; titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=titleBar
+titleLbl.Text="🪐 Antigravity Hub | Line Shot 💥"; titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=titleBar
 
 local tabRow=Instance.new("Frame")
 tabRow.Size=UDim2.new(1,-16,0,28); tabRow.Position=UDim2.new(0,8,0,40)
@@ -510,28 +505,35 @@ local function mkTab(txt)
     b.BackgroundColor3=Color3.fromRGB(35,35,45); b.Text=txt; b.Parent=tabRow
     Instance.new("UICorner",b).CornerRadius=UDim.new(0,6); return b
 end
-local hubTabBtn=mkTab("🌌  Hub"); hubTabBtn.TextColor3=Color3.fromRGB(255,255,255); hubTabBtn.BackgroundColor3=Color3.fromRGB(80,55,130)
-local nukerTabBtn=mkTab("⚡  Nuker")
-local worldTabBtn=mkTab("🌍  World")
-local settingsTabBtn=mkTab("⚙️  Settings")
+local hubTabBtn=mkTab("🏠 Hub"); hubTabBtn.TextColor3=Color3.fromRGB(255,255,255); hubTabBtn.BackgroundColor3=Color3.fromRGB(80,55,130)
+local nukerTabBtn=mkTab("💥 Nuker")
+local worldTabBtn=mkTab("🌎 World")
+local settingsTabBtn=mkTab("⚙️ Settings")
 
 local contentY=76
 
+-- forward declarations for widgets referenced in background loops (made global to avoid Luau 200 local register limit)
+hubPanel, nukerPanel, worldPanel, settingsPanel = nil, nil, nil, nil
+areaLbl, modeLbl, btLbl, fsLbl, psLbl, jfLbl, weightLbl, hpLbl, nextLbl, etaLbl, stLbl, arLbl = nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil
+fusStatLbl, fusReqLbl, fusPctLbl, fusRateLbl, fusEtaLbl = nil, nil, nil, nil, nil
+sphereLabel, priorityLabel, statusLabel, mathLabel, errorLabel, startBtn = nil, nil, nil, nil, nil, nil
+
 -- HUB PANEL
-local hubPanel=Instance.new("Frame")
+do
+hubPanel=Instance.new("Frame")
 hubPanel.Size=UDim2.new(1,0,1,-contentY); hubPanel.Position=UDim2.new(0,0,0,contentY)
 hubPanel.BackgroundTransparency=1; hubPanel.Parent=mainFrame
 
 local dz=Color3.fromRGB(145,138,160)
 
-local function mkHL(y,h,txt,col,align,bold)
+function mkHL(y,h,txt,col,align,bold)
     local l=Instance.new("TextLabel"); l.Size=UDim2.new(1,-pad*2,0,h); l.Position=UDim2.new(0,pad,0,y)
     l.BackgroundTransparency=1; l.Font=bold and Enum.Font.GothamBold or Enum.Font.Gotham
     l.TextSize=bold and 13 or 11; l.TextColor3=col; l.Text=txt
     l.TextXAlignment=align or Enum.TextXAlignment.Left; l.Parent=hubPanel; return l
 end
 
-local function mkHBtn(x,w,y,h)
+function mkHBtn(x,w,y,h)
     local b=Instance.new("TextButton"); b.Size=UDim2.new(0,w,0,h); b.Position=UDim2.new(0,x,0,y)
     b.BorderSizePixel=0; b.Font=Enum.Font.GothamBold; b.TextSize=10; b.TextColor3=Color3.fromRGB(255,255,255); b.Parent=hubPanel
     Instance.new("UICorner",b).CornerRadius=UDim.new(0,7); return b
@@ -545,40 +547,37 @@ local jfBtn = mkHBtn(pad+btnW*3+12,    btnW, 6, 32)
 local arBtn=mkHBtn(pad, math.floor(iw/2)-2, 42, 28)
 local tpBackBtn=mkHBtn(pad+math.floor(iw/2)+2, math.floor(iw/2)-2, 42, 28)
 local aqBtn=mkHBtn(pad, iw, 76, 28)
--- FS AUTO CLICK BUTTON
 local fsClickBtn=mkHBtn(pad, iw, 108, 28)
 
 local hubDiv=Instance.new("Frame"); hubDiv.Size=UDim2.new(1,-20,0,1); hubDiv.Position=UDim2.new(0,pad,0,140)
 hubDiv.BackgroundColor3=Color3.fromRGB(55,45,75); hubDiv.BorderSizePixel=0; hubDiv.Parent=hubPanel
 
--- stat labels (shifted down 33px to make room for fsClickBtn)
-local areaLbl  = mkHL(145, 18, "Trainer: off",       dz)
-local modeLbl  = mkHL(163, 18, "Mode: ---",           dz)
-local btLbl    = mkHL(181, 18, "BT: ...",             Color3.fromRGB(255,140,50))
-local fsLbl    = mkHL(199, 18, "FS: ...",             Color3.fromRGB(100,180,255))
-local psLbl    = mkHL(217, 18, "PS: ...",             Color3.fromRGB(200,100,255))
-local jfLbl    = mkHL(235, 18, "JF: ...",             Color3.fromRGB(80,220,120))
-local weightLbl= mkHL(253, 18, "Weight: ---",          Color3.fromRGB(180,220,100))
-local hpLbl    = mkHL(271, 18, "HP: ...",             dz)
-local nextLbl  = mkHL(289, 18, "Next zone: ---",      Color3.fromRGB(170,160,200))
-local etaLbl   = mkHL(307, 18, "ETA: ---",            Color3.fromRGB(130,110,180))
-local stLbl    = mkHL(325, 18, "Status: idle",        Color3.fromRGB(170,160,190))
-local arLbl    = mkHL(343, 18, "AutoRespawn: on",     Color3.fromRGB(90,200,255))
+areaLbl  = mkHL(145, 18, "🪐 Trainer: off",       dz)
+modeLbl  = mkHL(163, 18, "⚙️ Mode: ---",           dz)
+btLbl    = mkHL(181, 18, "🛡️ BT: ...",             Color3.fromRGB(255,140,50))
+fsLbl    = mkHL(199, 18, "🥊 FS: ...",             Color3.fromRGB(100,180,255))
+psLbl    = mkHL(217, 18, "🧠 PS: ...",             Color3.fromRGB(200,100,255))
+jfLbl    = mkHL(235, 18, "⚡ JF: ...",             Color3.fromRGB(80,220,120))
+weightLbl= mkHL(253, 18, "🏋️ Weight: ---",          Color3.fromRGB(180,220,100))
+hpLbl    = mkHL(271, 18, "❤️ HP: ...",             dz)
+nextLbl  = mkHL(289, 18, "🔑 Next zone: ---",      Color3.fromRGB(170,160,200))
+etaLbl   = mkHL(307, 18, "⏳ ETA: ---",            Color3.fromRGB(130,110,180))
+stLbl    = mkHL(325, 18, "📈 Status: idle",        Color3.fromRGB(170,160,190))
+arLbl    = mkHL(343, 18, "🔄 AutoRespawn: on",     Color3.fromRGB(90,200,255))
 
 local fusDivider=Instance.new("Frame"); fusDivider.Size=UDim2.new(1,-20,0,1); fusDivider.Position=UDim2.new(0,pad,0,367)
 fusDivider.BackgroundColor3=Color3.fromRGB(80,50,120); fusDivider.BorderSizePixel=0; fusDivider.Parent=hubPanel
 
-mkHL(373,14,"✨  FUSION TRACKER",Color3.fromRGB(200,160,255),nil,true)
-local fusStatLbl=mkHL(391,18,"TP:  ---  [?]",  Color3.fromRGB(255,200,80))
-local fusReqLbl =mkHL(409,18,"Next: ---",       Color3.fromRGB(200,170,255))
-local fusPctLbl =mkHL(427,18,"Progress: ---",   Color3.fromRGB(100,220,100))
-local fusRateLbl=mkHL(445,18,"Rate:  ---",       Color3.fromRGB(160,200,255))
-local fusEtaLbl =mkHL(463,22,"ETA:   ---",       Color3.fromRGB(120,240,255),nil,true)
-mkHL(499,14,"Antigravity 💜  |  BT:"..#btAreas.."  FS:"..#fsAreas.."  PS:"..#psAreas.." zones",Color3.fromRGB(70,60,100),Enum.TextXAlignment.Center)
+mkHL(373,14,"⭐ FUSION TRACKER",Color3.fromRGB(200,160,255),nil,true)
+fusStatLbl=mkHL(391,18,"🌌 TP:  ---  [?]",  Color3.fromRGB(255,200,80))
+fusReqLbl =mkHL(409,18,"✨ Next: ---",       Color3.fromRGB(200,170,255))
+fusPctLbl =mkHL(427,18,"📊 Progress: ---",   Color3.fromRGB(100,220,100))
+fusRateLbl=mkHL(445,18,"📈 Rate:  ---",       Color3.fromRGB(160,200,255))
+fusEtaLbl =mkHL(463,22,"⏳ ETA:   ---",       Color3.fromRGB(120,240,255),nil,true)
+mkHL(499,14,"🪐 Antigravity | BT:"..#btAreas.."  FS:"..#fsAreas.."  PS:"..#psAreas.." zones",Color3.fromRGB(70,60,100),Enum.TextXAlignment.Center)
 
--- TRAINER BUTTON LOGIC
 local trainerBtns = {BT=btBtn, FS=fsBtn, PS=psBtn, JF=jfBtn}
-local trainerLabels = {BT="💪 BT", FS="👊 FS", PS="🔮 PS", JF="🦘 JF"}
+local trainerLabels = {BT="🛡️ BT", FS="🥊 FS", PS="🧠 PS", JF="⚡ JF"}
 
 local trainerColors = {
     JF = Color3.fromRGB(20,130,60),
@@ -590,7 +589,7 @@ local trainerColors = {
 local function refreshTrainerBtns()
     for key, btn in pairs(trainerBtns) do
         local on = (key == "JF") and (_G.JFEnabled == true) or (_G.ActiveTrainer == key)
-        btn.Text = trainerLabels[key] .. ": " .. (on and "ON ✅" or "OFF ❌")
+        btn.Text = trainerLabels[key] .. ": " .. (on and "ON" or "OFF")
         TweenService:Create(btn,TweenInfo.new(0.15),{BackgroundColor3=on and trainerColors[key] or Color3.fromRGB(52,52,62)}):Play()
     end
 end
@@ -677,21 +676,21 @@ jfBtn.MouseButton1Click:Connect(function()
 end)
 
 local function refreshARBtn()
-    arBtn.Text="🔄 AR: "..(_G.AutoRespawnEnabled and "ON ✅" or "OFF ❌")
+    arBtn.Text="🔄 AR: "..(_G.AutoRespawnEnabled and "ON" or "OFF")
     arBtn.BackgroundColor3=_G.AutoRespawnEnabled and Color3.fromRGB(38,90,130) or Color3.fromRGB(52,52,62)
-    arLbl.Text="AutoRespawn: "..(_G.AutoRespawnEnabled and "on" or "off")
+    arLbl.Text="🔄 AutoRespawn: "..(_G.AutoRespawnEnabled and "on" or "off")
     arLbl.TextColor3=_G.AutoRespawnEnabled and Color3.fromRGB(90,200,255) or Color3.fromRGB(150,150,150)
 end
 local function refreshTPBackBtn()
-    tpBackBtn.Text="📍 TP Back: "..(_G.ARTeleportBack and "ON ✅" or "OFF ❌")
+    tpBackBtn.Text="📍 TP Back: "..(_G.ARTeleportBack and "ON" or "OFF")
     tpBackBtn.BackgroundColor3=_G.ARTeleportBack and Color3.fromRGB(35,80,120) or Color3.fromRGB(45,45,55)
 end
 local function refreshAQBtn()
-    aqBtn.Text="🎯 Auto Quest: "..(_G.AutoQuestEnabled and "ON ✅" or "OFF ❌")
+    aqBtn.Text="📜 Auto Quest: "..(_G.AutoQuestEnabled and "ON" or "OFF")
     aqBtn.BackgroundColor3=_G.AutoQuestEnabled and Color3.fromRGB(30,120,80) or Color3.fromRGB(45,45,55)
 end
 local function refreshFSClickBtn()
-    fsClickBtn.Text="👊 FS Auto Click: "..(fsAutoClick and "ON ✅" or "OFF ❌")
+    fsClickBtn.Text="🥊 FS Auto Click: "..(fsAutoClick and "ON" or "OFF")
     fsClickBtn.BackgroundColor3=fsAutoClick and Color3.fromRGB(30,90,160) or Color3.fromRGB(45,45,55)
 end
 
@@ -704,29 +703,31 @@ fsClickBtn.MouseButton1Click:Connect(function()
     refreshFSClickBtn()
     warn("[FSClick] Auto Click " .. (fsAutoClick and "ON" or "OFF"))
 end)
+end -- HUB PANEL
 
 -- NUKER PANEL
-local nukerPanel=Instance.new("Frame")
+do
+nukerPanel=Instance.new("Frame")
 nukerPanel.Size=UDim2.new(1,0,1,-contentY); nukerPanel.Position=UDim2.new(0,0,0,contentY)
 nukerPanel.BackgroundTransparency=1; nukerPanel.Visible=false; nukerPanel.Parent=mainFrame
 
-local function mkNL(y,h,txt,col,font,tsize,wrap)
+function mkNL(y,h,txt,col,font,tsize,wrap)
     local l=Instance.new("TextLabel"); l.Size=UDim2.new(0,iw,0,h); l.Position=UDim2.new(0,pad,0,y)
     l.BackgroundTransparency=1; l.Font=font or Enum.Font.Gotham; l.TextSize=tsize or 12
     l.TextColor3=col or Color3.fromRGB(180,180,180); l.TextXAlignment=Enum.TextXAlignment.Left
     l.TextWrapped=wrap or false; l.Text=txt; l.Parent=nukerPanel; return l
 end
-local function mkNH(y,txt)
+function mkNH(y,txt)
     local l=Instance.new("TextLabel"); l.Size=UDim2.new(0,iw,0,12); l.Position=UDim2.new(0,pad,0,y)
     l.BackgroundTransparency=1; l.Font=Enum.Font.GothamBold; l.TextSize=10
     l.TextColor3=Color3.fromRGB(100,100,100); l.TextXAlignment=Enum.TextXAlignment.Left; l.Text=txt; l.Parent=nukerPanel
 end
 
-local sphereLabel=mkNL(6,18,string.format("Sphere: %.1f  FS: %.2e",getSphereRadius(),LP:GetAttribute("FistStrength") or 0))
-local priorityLabel=mkNL(26,14,"Targeting: all",Color3.fromRGB(255,200,60),Enum.Font.Code,10)
-local statusLabel=mkNL(42,36,"Idle — press Start",Color3.fromRGB(150,150,150),Enum.Font.Gotham,12,true)
-local mathLabel=mkNL(80,18,"Ray dist: --",Color3.fromRGB(100,200,100),Enum.Font.Code,11)
-local errorLabel=mkNL(100,14,"",Color3.fromRGB(255,80,80),Enum.Font.Code,10)
+sphereLabel=mkNL(6,18,string.format("🔮 Sphere: %.1f  FS: %.2e",getSphereRadius(),LP:GetAttribute("FistStrength") or 0))
+priorityLabel=mkNL(26,14,"🎯 Targeting: all",Color3.fromRGB(255,200,60),Enum.Font.Code,10)
+statusLabel=mkNL(42,36,"📈 Status: Idle - press Start",Color3.fromRGB(150,150,150),Enum.Font.Gotham,12,true)
+mathLabel=mkNL(80,18,"📏 Ray dist: --",Color3.fromRGB(100,200,100),Enum.Font.Code,11)
+errorLabel=mkNL(100,14,"",Color3.fromRGB(255,80,80),Enum.Font.Code,10)
 
 mkNH(120,"TARGETS")
 local toggleRow=Instance.new("Frame"); toggleRow.Size=UDim2.new(0,iw,0,32); toggleRow.Position=UDim2.new(0,pad,0,134)
@@ -749,8 +750,8 @@ mkNH(174,"MODE")
 local modeRow=Instance.new("Frame"); modeRow.Size=UDim2.new(0,iw,0,32); modeRow.Position=UDim2.new(0,pad,0,188)
 modeRow.BackgroundTransparency=1; modeRow.Parent=nukerPanel
 local mLayout=Instance.new("UIListLayout"); mLayout.FillDirection=Enum.FillDirection.Horizontal; mLayout.SortOrder=Enum.SortOrder.LayoutOrder; mLayout.Padding=UDim.new(0,6); mLayout.Parent=modeRow
-local tpBtn=Instance.new("TextButton"); tpBtn.Size=UDim2.new(0,math.floor(iw/2)-3,1,0); tpBtn.BorderSizePixel=0; tpBtn.Font=Enum.Font.GothamBold; tpBtn.TextSize=11; tpBtn.Text="⚡ Teleport"; tpBtn.LayoutOrder=1; tpBtn.Parent=modeRow; Instance.new("UICorner",tpBtn).CornerRadius=UDim.new(0,5)
-local fmBtn=Instance.new("TextButton"); fmBtn.Size=UDim2.new(0,math.floor(iw/2)-3,1,0); fmBtn.BorderSizePixel=0; fmBtn.Font=Enum.Font.GothamBold; fmBtn.TextSize=11; fmBtn.Text="🚶 Free Move"; fmBtn.LayoutOrder=2; fmBtn.Parent=modeRow; Instance.new("UICorner",fmBtn).CornerRadius=UDim.new(0,5)
+local tpBtn=Instance.new("TextButton"); tpBtn.Size=UDim2.new(0,math.floor(iw/2)-3,1,0); tpBtn.BorderSizePixel=0; tpBtn.Font=Enum.Font.GothamBold; tpBtn.TextSize=11; tpBtn.Text="📍 Teleport"; tpBtn.LayoutOrder=1; tpBtn.Parent=modeRow; Instance.new("UICorner",tpBtn).CornerRadius=UDim.new(0,5)
+local fmBtn=Instance.new("TextButton"); fmBtn.Size=UDim2.new(0,math.floor(iw/2)-3,1,0); fmBtn.BorderSizePixel=0; fmBtn.Font=Enum.Font.GothamBold; fmBtn.TextSize=11; fmBtn.Text="🏃 Free Move"; fmBtn.LayoutOrder=2; fmBtn.Parent=modeRow; Instance.new("UICorner",fmBtn).CornerRadius=UDim.new(0,5)
 local function refreshModeButtons()
     TweenService:Create(tpBtn,TweenInfo.new(0.15),{BackgroundColor3=teleportMode and Color3.fromRGB(55,115,210) or Color3.fromRGB(55,55,55)}):Play(); tpBtn.TextColor3=teleportMode and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
     TweenService:Create(fmBtn,TweenInfo.new(0.15),{BackgroundColor3=not teleportMode and Color3.fromRGB(55,115,210) or Color3.fromRGB(55,55,55)}):Play(); fmBtn.TextColor3=not teleportMode and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
@@ -760,29 +761,29 @@ tpBtn.MouseButton1Click:Connect(function() teleportMode=true refreshModeButtons(
 fmBtn.MouseButton1Click:Connect(function() teleportMode=false refreshModeButtons() saveSettings() end)
 
 mkNH(228,"PRIORITY TARGET")
-local prioBtn=Instance.new("TextButton"); prioBtn.Size=UDim2.new(0,iw,0,28); prioBtn.Position=UDim2.new(0,pad,0,242); prioBtn.BorderSizePixel=0; prioBtn.Font=Enum.Font.GothamBold; prioBtn.TextSize=11; prioBtn.Text="🟡  Priority ON"; prioBtn.TextColor3=Color3.fromRGB(255,255,255); prioBtn.BackgroundColor3=Color3.fromRGB(180,130,20); prioBtn.Parent=nukerPanel; Instance.new("UICorner",prioBtn).CornerRadius=UDim.new(0,5)
+local prioBtn=Instance.new("TextButton"); prioBtn.Size=UDim2.new(0,iw,0,28); prioBtn.Position=UDim2.new(0,pad,0,242); prioBtn.BorderSizePixel=0; prioBtn.Font=Enum.Font.GothamBold; prioBtn.TextSize=11; prioBtn.Text="🎯 Priority ON"; prioBtn.TextColor3=Color3.fromRGB(255,255,255); prioBtn.BackgroundColor3=Color3.fromRGB(180,130,20); prioBtn.Parent=nukerPanel; Instance.new("UICorner",prioBtn).CornerRadius=UDim.new(0,5)
 prioBtn.MouseButton1Click:Connect(function()
     priorityMode=not priorityMode
     TweenService:Create(prioBtn,TweenInfo.new(0.15),{BackgroundColor3=priorityMode and Color3.fromRGB(180,130,20) or Color3.fromRGB(55,55,55)}):Play()
-    prioBtn.TextColor3=priorityMode and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110); prioBtn.Text=priorityMode and "🟡  Priority ON" or "⭕  Priority OFF"
+    prioBtn.TextColor3=priorityMode and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110); prioBtn.Text=priorityMode and "🎯 Priority ON" or "🎯 Priority OFF"
     saveSettings()
 end)
 
 mkNH(282,"ANTI-IDLE")
-local idleBtn=Instance.new("TextButton"); idleBtn.Size=UDim2.new(0,iw,0,28); idleBtn.Position=UDim2.new(0,pad,0,296); idleBtn.BorderSizePixel=0; idleBtn.Font=Enum.Font.GothamBold; idleBtn.TextSize=11; idleBtn.Text="🟢  Active"; idleBtn.TextColor3=Color3.fromRGB(255,255,255); idleBtn.BackgroundColor3=Color3.fromRGB(40,160,80); idleBtn.Parent=nukerPanel; Instance.new("UICorner",idleBtn).CornerRadius=UDim.new(0,5)
+local idleBtn=Instance.new("TextButton"); idleBtn.Size=UDim2.new(0,iw,0,28); idleBtn.Position=UDim2.new(0,pad,0,296); idleBtn.BorderSizePixel=0; idleBtn.Font=Enum.Font.GothamBold; idleBtn.TextSize=11; idleBtn.Text="⏳ Active"; idleBtn.TextColor3=Color3.fromRGB(255,255,255); idleBtn.BackgroundColor3=Color3.fromRGB(40,160,80); idleBtn.Parent=nukerPanel; Instance.new("UICorner",idleBtn).CornerRadius=UDim.new(0,5)
 idleBtn.MouseButton1Click:Connect(function()
     antiIdle=not antiIdle
     TweenService:Create(idleBtn,TweenInfo.new(0.15),{BackgroundColor3=antiIdle and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)}):Play()
-    idleBtn.TextColor3=antiIdle and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110); idleBtn.Text=antiIdle and "🟢  Active" or "⭕  Off"
+    idleBtn.TextColor3=antiIdle and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110); idleBtn.Text=antiIdle and "⏳ Active" or "⏳ Off"
     saveSettings()
 end)
 
 mkNH(336,"AUTO-SKIP WEAK")
-local skipBtn=Instance.new("TextButton"); skipBtn.Size=UDim2.new(0,iw,0,28); skipBtn.Position=UDim2.new(0,pad,0,350); skipBtn.BorderSizePixel=0; skipBtn.Font=Enum.Font.GothamBold; skipBtn.TextSize=11; skipBtn.Text="🟢  Active"; skipBtn.TextColor3=Color3.fromRGB(255,255,255); skipBtn.BackgroundColor3=Color3.fromRGB(40,160,80); skipBtn.Parent=nukerPanel; Instance.new("UICorner",skipBtn).CornerRadius=UDim.new(0,5)
+local skipBtn=Instance.new("TextButton"); skipBtn.Size=UDim2.new(0,iw,0,28); skipBtn.Position=UDim2.new(0,pad,0,350); skipBtn.BorderSizePixel=0; skipBtn.Font=Enum.Font.GothamBold; skipBtn.TextSize=11; skipBtn.Text="🚫 Active"; skipBtn.TextColor3=Color3.fromRGB(255,255,255); skipBtn.BackgroundColor3=Color3.fromRGB(40,160,80); skipBtn.Parent=nukerPanel; Instance.new("UICorner",skipBtn).CornerRadius=UDim.new(0,5)
 skipBtn.MouseButton1Click:Connect(function()
     autoSkipWeak=not autoSkipWeak
     TweenService:Create(skipBtn,TweenInfo.new(0.15),{BackgroundColor3=autoSkipWeak and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)}):Play()
-    skipBtn.TextColor3=autoSkipWeak and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110); skipBtn.Text=autoSkipWeak and "🟢  Active" or "⭕  Off"
+    skipBtn.TextColor3=autoSkipWeak and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110); skipBtn.Text=autoSkipWeak and "🚫 Active" or "🚫 Off"
     saveSettings()
 end)
 
@@ -790,41 +791,48 @@ do
     refreshModeButtons()
     prioBtn.BackgroundColor3=priorityMode and Color3.fromRGB(180,130,20) or Color3.fromRGB(55,55,55)
     prioBtn.TextColor3=priorityMode and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
-    prioBtn.Text=priorityMode and "🟡  Priority ON" or "⭕  Priority OFF"
+    prioBtn.Text=priorityMode and "🎯 Priority ON" or "🎯 Priority OFF"
     idleBtn.BackgroundColor3=antiIdle and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)
     idleBtn.TextColor3=antiIdle and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
-    idleBtn.Text=antiIdle and "🟢  Active" or "⭕  Off"
+    idleBtn.Text=antiIdle and "⏳ Active" or "⏳ Off"
     skipBtn.BackgroundColor3=autoSkipWeak and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)
     skipBtn.TextColor3=autoSkipWeak and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
-    skipBtn.Text=autoSkipWeak and "🟢  Active" or "⭕  Off"
+    skipBtn.Text=autoSkipWeak and "🚫 Active" or "🚫 Off"
 end
-local startBtn=Instance.new("TextButton"); startBtn.Size=UDim2.new(0,iw,0,34); startBtn.Position=UDim2.new(0,pad,0,392); startBtn.BackgroundColor3=Color3.fromRGB(40,180,80); startBtn.BorderSizePixel=0; startBtn.Font=Enum.Font.GothamBold; startBtn.TextSize=13; startBtn.TextColor3=Color3.fromRGB(255,255,255); startBtn.Text="▶  Start"; startBtn.Parent=nukerPanel; Instance.new("UICorner",startBtn).CornerRadius=UDim.new(0,6)
+startBtn=Instance.new("TextButton"); startBtn.Size=UDim2.new(0,iw,0,34); startBtn.Position=UDim2.new(0,pad,0,392); startBtn.BackgroundColor3=Color3.fromRGB(40,180,80); startBtn.BorderSizePixel=0; startBtn.Font=Enum.Font.GothamBold; startBtn.TextSize=13; startBtn.TextColor3=Color3.fromRGB(255,255,255); startBtn.Text="🟢 Start"; startBtn.Parent=nukerPanel; Instance.new("UICorner",startBtn).CornerRadius=UDim.new(0,6)
 if nukerRunning then
     _G.nukerRunning = true
-    startBtn.Text="■  Stop"; TweenService:Create(startBtn,TweenInfo.new(0),{BackgroundColor3=Color3.fromRGB(200,50,50)}):Play()
-    statusLabel.Text="🔍 Searching..."; statusLabel.TextColor3=Color3.fromRGB(255,200,50)
+    startBtn.Text="🔴 Stop"; TweenService:Create(startBtn,TweenInfo.new(0),{BackgroundColor3=Color3.fromRGB(200,50,50)}):Play()
+    statusLabel.Text="🔎 Searching..."; statusLabel.TextColor3=Color3.fromRGB(255,200,50)
 end
-
+end -- NUKER PANEL
 
 -- WORLD PANEL
-local worldPanel=Instance.new("Frame")
+do
+worldPanel=Instance.new("Frame")
 worldPanel.Size=UDim2.new(1,0,1,-contentY); worldPanel.Position=UDim2.new(0,0,0,contentY)
 worldPanel.BackgroundTransparency=1; worldPanel.Visible=false; worldPanel.Parent=mainFrame
 
-local function mkWH(y,txt)
+function mkWH(y,txt)
     local l=Instance.new("TextLabel"); l.Size=UDim2.new(0,iw,0,14); l.Position=UDim2.new(0,pad,0,y)
     l.BackgroundTransparency=1; l.Font=Enum.Font.GothamBold; l.TextSize=10
     l.TextColor3=Color3.fromRGB(100,100,100); l.TextXAlignment=Enum.TextXAlignment.Left
     l.Text=txt; l.Parent=worldPanel; return l
 end
-local function mkWToggle(y,lbl)
+function mkWToggle(y,lbl)
     local b=Instance.new("TextButton"); b.Size=UDim2.new(0,iw,0,28); b.Position=UDim2.new(0,pad,0,y)
     b.BorderSizePixel=0; b.Font=Enum.Font.GothamBold; b.TextSize=11
     b.TextColor3=Color3.fromRGB(110,110,110); b.BackgroundColor3=Color3.fromRGB(55,55,55)
     b.Text=lbl; b.Parent=worldPanel; Instance.new("UICorner",b).CornerRadius=UDim.new(0,5); return b
 end
+function mkWL(y,txt,col)
+    local l=Instance.new("TextLabel"); l.Size=UDim2.new(0,iw,0,16); l.Position=UDim2.new(0,pad,0,y)
+    l.BackgroundTransparency=1; l.Font=Enum.Font.Gotham; l.TextSize=11
+    l.TextColor3=col or Color3.fromRGB(180,180,180); l.TextXAlignment=Enum.TextXAlignment.Left
+    l.Text=txt; l.Parent=worldPanel; return l
+end
 
-local _G_FortLock = false
+_G_FortLock = false
 local _fortConn = nil
 
 local function getFlagPrompt()
@@ -834,36 +842,62 @@ local function getFlagPrompt()
     return flag, fp:FindFirstChildOfClass("ProximityPrompt")
 end
 
-local function captureFlag()
+function captureFlag()
+    if _G.isCapturingFort then return end
     local flag, prompt = getFlagPrompt(); if not prompt then return end
     local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart"); if not hrp then return end
+    _G.isCapturingFort = true
     local savedCF = hrp.CFrame
+    warn("🏰 [Fort Lock] Capturing fort... Teleporting to FlagPole")
+    pcall(function()
+        hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+        hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+    end)
     prompt.HoldDuration = 0; prompt.MaxActivationDistance = 9999
     hrp.CFrame = prompt.Parent.CFrame * CFrame.new(0,0,3)
-    task.wait(0.08) -- wait for server to replicate position
-    -- spam fire to bypass server-side hold duration
+    task.wait(0.15)
     for i=1,5 do fireproximityprompt(prompt) end
-    -- poll until confirmed or 2s timeout, then snap back
     local t = tick()
-    repeat task.wait(0.05) until (flag and flag:GetAttribute("OwnerName") == LP.Name) or tick()-t > 2
+    local isOwner = false
+    repeat
+        task.wait(0.05)
+        local owner = flag:GetAttribute("OwnerName")
+        local myGang = LP:GetAttribute("Gang")
+        isOwner = (owner == LP.Name) or (myGang and myGang ~= "" and owner and string.find(owner, myGang, 1, true) ~= nil)
+    until isOwner or tick()-t > 2
     hrp.CFrame = savedCF
+    warn("🏰 [Fort Lock] Capture finished. Returned to starting position")
+    pcall(function()
+        hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+        hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+    end)
+    _G.isCapturingFort = false
 end
 
-mkWH(6,"FORT (ban risk)")
-local fortLockBtn = mkWToggle(22,"⭕  Fort Lock: Off")
+local fortLockBtn = mkWToggle(12,"🏰 Fort Lock: Off")
 
-fortLockBtn.MouseButton1Click:Connect(function()
-    _G_FortLock = not _G_FortLock
+function _G.ToggleFortLock(val)
+    if val == nil then val = not _G_FortLock end
+    _G_FortLock = val
     TweenService:Create(fortLockBtn,TweenInfo.new(0.15),{BackgroundColor3=_G_FortLock and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)}):Play()
     fortLockBtn.TextColor3 = _G_FortLock and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
-    fortLockBtn.Text = _G_FortLock and "🟢  Fort Lock: On" or "⭕  Fort Lock: Off"
+    fortLockBtn.Text = _G_FortLock and "🏰 Fort Lock: On" or "🏰 Fort Lock: Off"
     if _G_FortLock then
         local flag = workspace:FindFirstChild("Flag")
-        if flag and flag:GetAttribute("OwnerName") ~= LP.Name then captureFlag() end
+        if flag then
+            local owner = flag:GetAttribute("OwnerName")
+            local myGang = LP:GetAttribute("Gang")
+            local isOwner = (owner == LP.Name) or (myGang and myGang ~= "" and owner and string.find(owner, myGang, 1, true) ~= nil)
+            if not isOwner and not _G.dtModeActive then captureFlag() end
+        end
         if flag then
             _fortConn = track(flag:GetAttributeChangedSignal("OwnerName"):Connect(function()
                 if not _G_FortLock then return end
-                if flag:GetAttribute("OwnerName") ~= LP.Name then
+                if _G.dtModeActive then return end
+                local owner = flag:GetAttribute("OwnerName")
+                local myGang = LP:GetAttribute("Gang")
+                local isOwner = (owner == LP.Name) or (myGang and myGang ~= "" and owner and string.find(owner, myGang, 1, true) ~= nil)
+                if not isOwner then
                     captureFlag()
                 end
             end))
@@ -871,19 +905,76 @@ fortLockBtn.MouseButton1Click:Connect(function()
     else
         if _fortConn then _fortConn:Disconnect(); _fortConn = nil end
     end
+end
+
+fortLockBtn.MouseButton1Click:Connect(function()
+    _G.ToggleFortLock()
 end)
+
+local autoRollBtn = mkWToggle(48,"🎲 Auto Roll: Off")
+local rollInfoLbl = mkWL(80,"🎟️ Tokens: -- | Last: --",Color3.fromRGB(140,140,160))
+
+local _autoRoll = false
+local _rollConn = nil
+
+local function stopAutoRoll()
+    _autoRoll = false
+    if _rollConn then _rollConn:Disconnect(); _rollConn = nil end
+    autoRollBtn.Text = "🎲 Auto Roll: Off"
+    TweenService:Create(autoRollBtn,TweenInfo.new(0.15),{BackgroundColor3=Color3.fromRGB(55,55,55)}):Play()
+    autoRollBtn.TextColor3 = Color3.fromRGB(110,110,110)
+end
+
+local function startAutoRoll()
+    _autoRoll = true
+    autoRollBtn.Text = "🎲 Auto Roll: ON"
+    TweenService:Create(autoRollBtn,TweenInfo.new(0.15),{BackgroundColor3=Color3.fromRGB(40,120,60)}):Play()
+    autoRollBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    local re = game:GetService("ReplicatedStorage").RemoteEvents
+    task.spawn(function()
+        while _autoRoll and hubAlive do
+            local tokens = LP:GetAttribute("RollTokens") or 0
+            if tokens <= 0 then
+                stopAutoRoll()
+                rollInfoLbl.Text = "🎟️ No tokens left"
+                break
+            end
+            rollInfoLbl.Text = "🎟️ Tokens: "..tokens.." | 🎲 Rolling..."
+            -- Connect BEFORE firing so fast server responses are never missed
+            local result = nil
+            _rollConn = re.RollRaceResult.OnClientEvent:Connect(function(ok, data)
+                if ok and data then result = data end
+            end)
+            re.RollRace:FireServer()
+            local t = tick()
+            repeat task.wait() until result or tick()-t > 0.8
+            if _rollConn then _rollConn:Disconnect(); _rollConn = nil end
+            if result then
+                local newTokens = LP:GetAttribute("RollTokens") or 0
+                rollInfoLbl.Text = string.format("🎟️ Tokens: %d | Last: %s (x%.3f)", newTokens, tostring(result.Race), result.Multiplier or 0)
+            end
+        end
+    end)
+end
+
+autoRollBtn.MouseButton1Click:Connect(function()
+    if _autoRoll then stopAutoRoll() else startAutoRoll() end
+end)
+end -- WORLD PANEL
+
 -- SETTINGS PANEL
-local settingsPanel=Instance.new("Frame")
+do
+settingsPanel=Instance.new("Frame")
 settingsPanel.Size=UDim2.new(1,0,1,-contentY); settingsPanel.Position=UDim2.new(0,0,0,contentY)
 settingsPanel.BackgroundTransparency=1; settingsPanel.Visible=false; settingsPanel.Parent=mainFrame
 
-local function mkSL(y,h,txt,col,bold)
+function mkSL(y,h,txt,col,bold)
     local l=Instance.new("TextLabel"); l.Size=UDim2.new(0,iw,0,h); l.Position=UDim2.new(0,pad,0,y)
     l.BackgroundTransparency=1; l.Font=bold and Enum.Font.GothamBold or Enum.Font.Gotham
     l.TextSize=bold and 13 or 11; l.TextColor3=col or Color3.fromRGB(180,180,180)
     l.TextXAlignment=Enum.TextXAlignment.Left; l.Text=txt; l.Parent=settingsPanel; return l
 end
-local function mkSBtn(y,h,txt,col)
+function mkSBtn(y,h,txt,col)
     local b=Instance.new("TextButton"); b.Size=UDim2.new(0,iw,0,h); b.Position=UDim2.new(0,pad,0,y)
     b.BorderSizePixel=0; b.Font=Enum.Font.GothamBold; b.TextSize=11
     b.TextColor3=Color3.fromRGB(255,255,255); b.BackgroundColor3=col or Color3.fromRGB(55,55,55)
@@ -907,13 +998,13 @@ local fakeSquad = ""
 local plNameLabel = nil
 local plNameConn  = nil
 
-local spoofHeader = mkSL(6, 16, "USERNAME SPOOFER", Color3.fromRGB(200,160,255), true)
-local spoofStatusLbl = mkSL(26, 18, "Status: off", Color3.fromRGB(150,150,150))
-local fakeNameLbl = mkSL(46, 18, "Fake name: ---", Color3.fromRGB(100,210,255))
-local fakeSquadLbl = mkSL(64, 18, "Fake squad: ---", Color3.fromRGB(100,255,180))
+local spoofHeader = mkSL(6, 16, "👤 USERNAME SPOOFER", Color3.fromRGB(200,160,255), true)
+local spoofStatusLbl = mkSL(26, 18, "👤 Status: off", Color3.fromRGB(150,150,150))
+local fakeNameLbl = mkSL(46, 18, "🎭 Fake name: ---", Color3.fromRGB(100,210,255))
+local fakeSquadLbl = mkSL(64, 18, "🛡️ Fake squad: ---", Color3.fromRGB(100,255,180))
 
-local spoofToggle = mkSBtn(88, 30, "🔴  Spoofer OFF", Color3.fromRGB(55,55,55))
-local rerollBtn = mkSBtn(124, 30, "🎲  Reroll Names", Color3.fromRGB(50,80,130))
+local spoofToggle = mkSBtn(88, 30, "👤 Spoofer OFF", Color3.fromRGB(55,55,55))
+local rerollBtn = mkSBtn(124, 30, "🎲 Reroll Names", Color3.fromRGB(50,80,130))
 
 local spoofRefs = nil
 
@@ -994,18 +1085,18 @@ local function revertSpoof(refs)
 end
 local function refreshSpoofUI()
     if spoofEnabled then
-        spoofToggle.Text = "🟢  Spoofer ON"
+        spoofToggle.Text = "👤 Spoofer ON"
         TweenService:Create(spoofToggle,TweenInfo.new(0.15),{BackgroundColor3=Color3.fromRGB(40,160,80)}):Play()
-        spoofStatusLbl.Text = "Status: active"
+        spoofStatusLbl.Text = "👤 Status: active"
         spoofStatusLbl.TextColor3 = Color3.fromRGB(90,210,90)
     else
-        spoofToggle.Text = "🔴  Spoofer OFF"
+        spoofToggle.Text = "👤 Spoofer OFF"
         TweenService:Create(spoofToggle,TweenInfo.new(0.15),{BackgroundColor3=Color3.fromRGB(55,55,55)}):Play()
-        spoofStatusLbl.Text = "Status: off"
+        spoofStatusLbl.Text = "👤 Status: off"
         spoofStatusLbl.TextColor3 = Color3.fromRGB(150,150,150)
     end
-    fakeNameLbl.Text = "Fake name: " .. (spoofEnabled and fakeName or "---")
-    fakeSquadLbl.Text = "Fake squad: " .. (spoofEnabled and fakeSquad or "---")
+    fakeNameLbl.Text = "🎭 Fake name: " .. (spoofEnabled and fakeName or "---")
+    fakeSquadLbl.Text = "🛡️ Fake squad: " .. (spoofEnabled and fakeSquad or "---")
 end
 
 spoofToggle.MouseButton1Click:Connect(function()
@@ -1069,28 +1160,33 @@ rerollBtn.MouseButton1Click:Connect(function()
 end)
 
 refreshSpoofUI()
+end -- SETTINGS PANEL
 
 -- TAB SWITCHING
-local function switchTab(tab)
-    hubPanel.Visible=(tab=="hub"); nukerPanel.Visible=(tab=="nuker"); settingsPanel.Visible=(tab=="settings"); worldPanel.Visible=(tab=="world")
-    local tabs = {hub=hubTabBtn, nuker=nukerTabBtn, settings=settingsTabBtn, world=worldTabBtn}
-    for k,b in pairs(tabs) do
-        local on=(k==tab)
-        TweenService:Create(b,TweenInfo.new(0.15),{BackgroundColor3=on and Color3.fromRGB(80,55,130) or Color3.fromRGB(35,35,45)}):Play()
-        b.TextColor3=on and Color3.fromRGB(255,255,255) or Color3.fromRGB(140,140,140)
+do
+    function switchTab(tab)
+        hubPanel.Visible=(tab=="hub"); nukerPanel.Visible=(tab=="nuker"); settingsPanel.Visible=(tab=="settings"); worldPanel.Visible=(tab=="world")
+        local tabs = {hub=hubTabBtn, nuker=nukerTabBtn, settings=settingsTabBtn, world=worldTabBtn}
+        for k,b in pairs(tabs) do
+            local on=(k==tab)
+            TweenService:Create(b,TweenInfo.new(0.15),{BackgroundColor3=on and Color3.fromRGB(80,55,130) or Color3.fromRGB(35,35,45)}):Play()
+            b.TextColor3=on and Color3.fromRGB(255,255,255) or Color3.fromRGB(140,140,140)
+        end
     end
+    hubTabBtn.MouseButton1Click:Connect(function() switchTab("hub") end)
+    nukerTabBtn.MouseButton1Click:Connect(function() switchTab("nuker") end)
+    settingsTabBtn.MouseButton1Click:Connect(function() switchTab("settings") end)
+    worldTabBtn.MouseButton1Click:Connect(function() switchTab("world") end)
+    switchTab("hub")
 end
-hubTabBtn.MouseButton1Click:Connect(function() switchTab("hub") end)
-nukerTabBtn.MouseButton1Click:Connect(function() switchTab("nuker") end)
-settingsTabBtn.MouseButton1Click:Connect(function() switchTab("settings") end)
-worldTabBtn.MouseButton1Click:Connect(function() switchTab("world") end)
-switchTab("hub")
 
 -- DRAG
-local dragging,dragStart,startPos
-titleBar.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true;dragStart=i.Position;startPos=mainFrame.Position end end)
-titleBar.InputChanged:Connect(function(i) if dragging and i.UserInputType==Enum.UserInputType.MouseMovement then local d=i.Position-dragStart; mainFrame.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y) end end)
-titleBar.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
+do
+    local dragging,dragStart,startPos
+    titleBar.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true;dragStart=i.Position;startPos=mainFrame.Position end end)
+    titleBar.InputChanged:Connect(function(i) if dragging and i.UserInputType==Enum.UserInputType.MouseMovement then local d=i.Position-dragStart; mainFrame.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y) end end)
+    titleBar.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
+end
 
 -- NUKER LOOP
 startBtn.MouseButton1Click:Connect(function()
@@ -1098,28 +1194,28 @@ startBtn.MouseButton1Click:Connect(function()
     _G.nukerRunning = nukerRunning
     saveSettings()
     if nukerRunning then
-        startBtn.Text="■  Stop"; TweenService:Create(startBtn,TweenInfo.new(0.2),{BackgroundColor3=Color3.fromRGB(200,50,50)}):Play()
-        statusLabel.Text="🔍 Searching..."; statusLabel.TextColor3=Color3.fromRGB(255,200,50)
+        startBtn.Text="🔴 Stop"; TweenService:Create(startBtn,TweenInfo.new(0.2),{BackgroundColor3=Color3.fromRGB(200,50,50)}):Play()
+        statusLabel.Text="🔎 Searching..."; statusLabel.TextColor3=Color3.fromRGB(255,200,50)
     else
-        startBtn.Text="▶  Start"; TweenService:Create(startBtn,TweenInfo.new(0.2),{BackgroundColor3=Color3.fromRGB(40,180,80)}):Play()
-        statusLabel.Text="Idle — press Start"; statusLabel.TextColor3=Color3.fromRGB(150,150,150)
-        mathLabel.Text="Ray dist: --"; errorLabel.Text=""; priorityLabel.Text="Targeting: all"
+        startBtn.Text="🟢 Start"; TweenService:Create(startBtn,TweenInfo.new(0.2),{BackgroundColor3=Color3.fromRGB(40,180,80)}):Play()
+        statusLabel.Text="📈 Status: Idle - press Start"; statusLabel.TextColor3=Color3.fromRGB(150,150,150)
+        mathLabel.Text="📏 Ray dist: --"; errorLabel.Text=""; priorityLabel.Text="🎯 Targeting: all"
     end
 end)
 task.spawn(function()
     while hubAlive do
-        if not nukerRunning then task.wait(0.2); continue end
+        if not nukerRunning or _G.isCapturingFort then task.wait(0.2); continue end
         if not character or not hrp or not hrp.Parent then statusLabel.Text="⏳ Waiting for character..."; task.wait(1); continue end
         local alive=getAlive()
-        if #alive==0 then statusLabel.Text="Waiting for spawns..."; statusLabel.TextColor3=Color3.fromRGB(150,150,150); mathLabel.Text="Ray dist: --"; priorityLabel.Text="Targeting: none"; task.wait(0.5); continue end
+        if #alive==0 then statusLabel.Text="⏳ Waiting for spawns..."; statusLabel.TextColor3=Color3.fromRGB(150,150,150); mathLabel.Text="📏 Ray dist: --"; priorityLabel.Text="🎯 Targeting: none"; task.wait(0.5); continue end
         local currentType=alive[1].name
-        priorityLabel.Text=string.format("Targeting: %s (%.0e tk)",currentType,tokenValues[currentType] or 0)
-        local radius=getSphereRadius(); sphereLabel.Text=string.format("Sphere: %.1f  FS: %.2e",radius,LP:GetAttribute("FistStrength") or 0)
+        priorityLabel.Text=string.format("🎯 Targeting: %s (%.0e tk)",currentType,tokenValues[currentType] or 0)
+        local radius=getSphereRadius(); sphereLabel.Text=string.format("🔮 Sphere: %.1f  FS: %.2e",radius,LP:GetAttribute("FistStrength") or 0)
         local ok,_=pcall(findBestLine,alive,radius); if not ok then task.wait(0.5); continue end
         local origin,dir,maxDist,centroid,hits=findBestLine(alive,radius); if not origin then task.wait(0.5); continue end
         errorLabel.Text=""
-        statusLabel.Text=string.format("🔥 Hitting %d / %d",hits,#alive); statusLabel.TextColor3=Color3.fromRGB(255,120,50)
-        mathLabel.Text=string.format("Max dev: %.2f / %.1f  %s",maxDist,radius,hits==#alive and "✅" or "⚠️"); mathLabel.TextColor3=hits==#alive and Color3.fromRGB(100,220,100) or Color3.fromRGB(255,160,50)
+        statusLabel.Text=string.format("💥 Hitting %d / %d",hits,#alive); statusLabel.TextColor3=Color3.fromRGB(255,120,50)
+        mathLabel.Text=string.format("📏 Max dev: %.2f / %.1f  %s",maxDist,radius,hits==#alive and "OK" or "!"); mathLabel.TextColor3=hits==#alive and Color3.fromRGB(100,220,100) or Color3.fromRGB(255,160,50)
         if teleportMode then hrp.CFrame=CFrame.new(origin,origin+dir); task.wait(0.05) end
         pcall(function() UseSkill:FireServer("EnergySphere",centroid+dir*behindDist) end)
         task.wait(burstSpeed)
@@ -1127,7 +1223,7 @@ task.spawn(function()
 end)
 
 -- WEIGHT DATA
-local weightData = {
+weightData = {
     {title="100 LB",   req=100},
     {title="1 TON",    req=5000},
     {title="10 TON",   req=500000},
@@ -1183,20 +1279,20 @@ task.spawn(function()
         recordStat(btSamples,bt); recordStat(fsSamples,fs); recordStat(psSamples,ps)
         local btRate=getRate(btSamples); local fsRate=getRate(fsSamples); local psRate=getRate(psSamples)
 
-        btLbl.Text=string.format("BT: %s  (x%s  +%s/s)", fmtNum(bt), fmtNum(btM), fmtNum(btRate))
-        fsLbl.Text=string.format("FS: %s  (x%s  +%s/s)", fmtNum(fs), fmtNum(fsM), fmtNum(fsRate))
-        psLbl.Text=string.format("PS: %s  (x%s  +%s/s)", fmtNum(ps), fmtNum(psM), fmtNum(psRate))
+        btLbl.Text=string.format("🛡️ BT: %s  (x%s  +%s/s)", fmtNum(bt), fmtNum(btM), fmtNum(btRate))
+        fsLbl.Text=string.format("🥊 FS: %s  (x%s  +%s/s)", fmtNum(fs), fmtNum(fsM), fmtNum(fsRate))
+        psLbl.Text=string.format("🧠 PS: %s  (x%s  +%s/s)", fmtNum(ps), fmtNum(psM), fmtNum(psRate))
         local jf  = tonumber(LP:GetAttribute("JumpForce")) or 0
         local jfM = LP:GetAttribute("JumpForceMultiplier") or 1
         local jp  = tonumber(LP:GetAttribute("JumpPower")) or 0
-        jfLbl.Text  = string.format("JF: %s  (x%s)", fmtNum(jf), fmtNum(jfM))
+        jfLbl.Text  = string.format("⚡ JF: %s  (x%s)", fmtNum(jf), fmtNum(jfM))
         if _G.JFEnabled then
             local wi = getBestWeightIndex()
             local wt = wi > 0 and weightData[wi].title or "Unequipped"
-            weightLbl.Text = "Weight: " .. wt .. "  JF:" .. fmtNum(jf)
+            weightLbl.Text = "🏋️ Weight: " .. wt .. "  JF:" .. fmtNum(jf)
             weightLbl.TextColor3 = Color3.fromRGB(180,220,100)
         else
-            weightLbl.Text = "Weight: ---"
+            weightLbl.Text = "🏋️ Weight: ---"
             weightLbl.TextColor3 = Color3.fromRGB(100,100,100)
         end
 
@@ -1206,39 +1302,40 @@ task.spawn(function()
         if nextTier then
             local req=nextTier.req; local remaining=math.max(0,req-tp)
             local pct=math.min(100,(tp/req)*100); local etaSecs=fusRate2>0 and (remaining/fusRate2) or math.huge
-            fusStatLbl.Text=string.format("TP:  %s  [%s]",fmtNum(tp),fusionName)
-            fusReqLbl.Text=string.format("Next: %s  (%s req)",nextTier.name,fmtNum(req))
-            fusPctLbl.Text=string.format("Progress: %.4f%%",pct)
-            fusRateLbl.Text=string.format("Rate:  +%s/s",fmtNum(fusRate2))
+            fusStatLbl.Text=string.format("🌌 TP:  %s  [%s]",fmtNum(tp),fusionName)
+            fusReqLbl.Text=string.format("✨ Next: %s  (%s req)",nextTier.name,fmtNum(req))
+            fusPctLbl.Text=string.format("📊 Progress: %.4f%%",pct)
+            fusRateLbl.Text=string.format("📈 Rate:  +%s/s",fmtNum(fusRate2))
             if fusRate2>0 then
-                fusEtaLbl.Text="ETA:   "..fmtETALong(etaSecs); fusEtaLbl.TextColor3=Color3.fromRGB(120,240,255)
-                local now=tick(); if now-lastFusionPrint>=60 then lastFusionPrint=now warn(string.format("[Fusion] TP=%.3e  %s→%s  ETA=%s",tp,fusionName,nextTier.name,fmtETALong(etaSecs))) end
-            else fusEtaLbl.Text="ETA:   warming up..."; fusEtaLbl.TextColor3=Color3.fromRGB(150,150,150) end
+                fusEtaLbl.Text="⏳ ETA:   "..fmtETALong(etaSecs); fusEtaLbl.TextColor3=Color3.fromRGB(120,240,255)
+                local now=tick(); if now-lastFusionPrint>=60 then lastFusionPrint=now warn(string.format("[Fusion] TP=%.3e  %s->%s  ETA=%s",tp,fusionName,nextTier.name,fmtETALong(etaSecs))) end
+            else fusEtaLbl.Text="⏳ ETA:   warming up..."; fusEtaLbl.TextColor3=Color3.fromRGB(150,150,150) end
         else
-            fusStatLbl.Text=string.format("TP:  %s  [%s]",fmtNum(tp),fusionName); fusReqLbl.Text="ALL MAXED 🏆"; fusPctLbl.Text="Progress: 100%"
-            fusRateLbl.Text=string.format("Rate:  +%s/s",fmtNum(fusRate2)); fusEtaLbl.Text="Maxed! ✨"; fusEtaLbl.TextColor3=Color3.fromRGB(255,215,0)
+            fusStatLbl.Text=string.format("🌌 TP:  %s  [%s]",fmtNum(tp),fusionName); fusReqLbl.Text="✨ Next: ALL MAXED"; fusPctLbl.Text="📊 Progress: 100%"
+            fusRateLbl.Text=string.format("📈 Rate:  +%s/s",fmtNum(fusRate2)); fusEtaLbl.Text="⏳ Maxed!"; fusEtaLbl.TextColor3=Color3.fromRGB(255,215,0)
         end
 
         local char=LP.Character; local hum=char and char:FindFirstChild("Humanoid"); local crp=char and char:FindFirstChild("HumanoidRootPart")
         if hum and hum.MaxHealth>0 then
             local pct=hum.Health/hum.MaxHealth
-            hpLbl.Text=string.format("HP: %d%% (%d/%d)",math.floor(pct*100),math.floor(hum.Health),math.floor(hum.MaxHealth))
+            hpLbl.Text=string.format("❤️ HP: %d%% (%d/%d)",math.floor(pct*100),math.floor(hum.Health),math.floor(hum.MaxHealth))
             hpLbl.TextColor3=pct>0.6 and Color3.fromRGB(90,210,90) or pct>0.25 and Color3.fromRGB(255,185,50) or Color3.fromRGB(255,60,60)
-        else hpLbl.Text="HP: dead"; hpLbl.TextColor3=Color3.fromRGB(200,60,60) end
+        else hpLbl.Text="❤️ HP: dead"; hpLbl.TextColor3=Color3.fromRGB(200,60,60) end
 
         local key=_G.ActiveTrainer
         if not key then
+            _G.dtModeActive = false
             if activeArea then activeArea=nil; activeKey=nil end
-            areaLbl.Text="Trainer: off"; areaLbl.TextColor3=dz
-            modeLbl.Text="Mode: ---"; modeLbl.TextColor3=dz
-            stLbl.Text="Status: idle"; stLbl.TextColor3=dz
-            nextLbl.Text="Next zone: ---"; nextLbl.TextColor3=dz; etaLbl.Text=""
+            areaLbl.Text="🪐 Trainer: off"; areaLbl.TextColor3=Color3.fromRGB(145,138,160)
+            modeLbl.Text="⚙️ Mode: ---"; modeLbl.TextColor3=Color3.fromRGB(145,138,160)
+            stLbl.Text="📈 Status: idle"; stLbl.TextColor3=Color3.fromRGB(145,138,160)
+            nextLbl.Text="🔑 Next zone: ---"; nextLbl.TextColor3=Color3.fromRGB(145,138,160); etaLbl.Text=""
             continue
         end
 
         if not crp or not hum or hum.Health<=0 then
-            areaLbl.Text="Trainer: dead, waiting..."; areaLbl.TextColor3=Color3.fromRGB(180,180,180)
-            stLbl.Text="Status: respawning"; stLbl.TextColor3=Color3.fromRGB(180,180,180); continue
+            areaLbl.Text="🪐 Trainer: dead, waiting..."; areaLbl.TextColor3=Color3.fromRGB(180,180,180)
+            stLbl.Text="📈 Status: respawning"; stLbl.TextColor3=Color3.fromRGB(180,180,180); continue
         end
 
         local cfg=trainerConfig[key]
@@ -1260,42 +1357,45 @@ task.spawn(function()
         if nextZone then
             local needed=(key == "BT" and nextZone.req/dtDivisor or nextZone.req) - statVal
             if needed<=0 then
-                nextLbl.Text="Next: "..nextZone.name.." ✅ UNLOCKED"; nextLbl.TextColor3=Color3.fromRGB(90,210,90); etaLbl.Text=""
+                nextLbl.Text="🔑 Next: "..nextZone.name.." UNLOCKED"; nextLbl.TextColor3=Color3.fromRGB(90,210,90); etaLbl.Text=""
             else
                 local eta=statRate>0 and (needed/statRate) or math.huge
-                nextLbl.Text=string.format("Next: %s (need %s)",nextZone.name,fmtNum(key == "BT" and nextZone.req/dtDivisor or nextZone.req)); nextLbl.TextColor3=Color3.fromRGB(170,160,200)
-                etaLbl.Text=string.format("ETA: %s  (+%s)",fmtTime(eta),fmtNum(needed)); etaLbl.TextColor3=Color3.fromRGB(130,110,180)
+                nextLbl.Text=string.format("🔑 Next: %s (need %s)",nextZone.name,fmtNum(key == "BT" and nextZone.req/dtDivisor or nextZone.req)); nextLbl.TextColor3=Color3.fromRGB(170,160,200)
+                etaLbl.Text=string.format("⏳ ETA: %s  (+%s)",fmtTime(eta),fmtNum(needed)); etaLbl.TextColor3=Color3.fromRGB(130,110,180)
             end
-        else nextLbl.Text="Next: ALL MAXED 🏆"; nextLbl.TextColor3=Color3.fromRGB(255,215,0); etaLbl.Text="" end
+        else nextLbl.Text="🔑 Next: ALL MAXED"; nextLbl.TextColor3=Color3.fromRGB(255,215,0); etaLbl.Text="" end
 
         if bestArea and (activeArea~=bestArea or activeKey~=key) then
             activeArea=bestArea; activeKey=key; _G.activeTrainArea=activeArea
-            if not isInsideArea(crp.Position, activeArea) then
-                stLbl.Text="Status: teleporting to "..activeArea.name; stLbl.TextColor3=Color3.fromRGB(255,200,50)
+            if not _G.isCapturingFort and not isInsideArea(crp.Position, activeArea) then
+                stLbl.Text="📈 Status: teleporting to "..activeArea.name; stLbl.TextColor3=Color3.fromRGB(255,200,50)
                 crp.CFrame = getAreaLandCFrame(activeArea)
             end
         end
 
         if not activeArea then
-            areaLbl.Text="Trainer: no zone yet"; areaLbl.TextColor3=dz
-            stLbl.Text="Status: stat too low for any zone"; stLbl.TextColor3=dz; continue
+            areaLbl.Text="🪐 Trainer: no zone yet"; areaLbl.TextColor3=Color3.fromRGB(145,138,160)
+            stLbl.Text="📈 Status: stat too low for any zone"; stLbl.TextColor3=Color3.fromRGB(145,138,160); continue
         end
 
-        if not isInsideArea(crp.Position, activeArea) then
+        if not _G.isCapturingFort and not isInsideArea(crp.Position, activeArea) then
             crp.CFrame = getAreaLandCFrame(activeArea)
         end
 
-        areaLbl.Text=string.format("Trainer: %s → %s",key,activeArea.name); areaLbl.TextColor3=cfg.color
+        areaLbl.Text=string.format("🪐 Trainer: %s -> %s",key,activeArea.name); areaLbl.TextColor3=cfg.color
         if key ~= "BT" then
-            modeLbl.Text="Mode: Grinding 💪"; modeLbl.TextColor3=cfg.color
-            stLbl.Text="Status: grinding "..key.."..."; stLbl.TextColor3=cfg.color
+            _G.dtModeActive = false
+            modeLbl.Text="⚙️ Mode: Grinding"; modeLbl.TextColor3=cfg.color
+            stLbl.Text="📈 Status: grinding "..key.."..."; stLbl.TextColor3=cfg.color
         elseif statVal>=(activeArea.req*4) then
-            modeLbl.Text="Mode: AFK 😴 (no damage)"; modeLbl.TextColor3=Color3.fromRGB(90,200,255)
-            stLbl.Text="Status: AFK grinding BT..."; stLbl.TextColor3=Color3.fromRGB(90,200,255)
+            _G.dtModeActive = false
+            modeLbl.Text="⚙️ Mode: AFK (no damage)"; modeLbl.TextColor3=Color3.fromRGB(90,200,255)
+            stLbl.Text="📈 Status: AFK grinding BT..."; stLbl.TextColor3=Color3.fromRGB(90,200,255)
         else
+            _G.dtModeActive = true
             local pct=math.floor((statVal/(activeArea.req*4))*100)
-            modeLbl.Text=string.format("Mode: Death Train 💀 (%d%% to AFK)",pct); modeLbl.TextColor3=cfg.color
-            stLbl.Text="Status: dying for BT..."; stLbl.TextColor3=cfg.color
+            modeLbl.Text=string.format("⚙️ Mode: Death Train (%d%% to AFK)",pct); modeLbl.TextColor3=cfg.color
+            stLbl.Text="📈 Status: dying for BT..."; stLbl.TextColor3=cfg.color
         end
     end
 end)
@@ -1418,7 +1518,7 @@ task.spawn(function()
         if _G.JFEnabled then hookJF() end
     end))
 end)
-warn("[AG] Ready — BT:"..#btAreas.." FS:"..#fsAreas.." PS:"..#psAreas.." zones")
+warn("[AG] Ready - BT:"..#btAreas.." FS:"..#fsAreas.." PS:"..#psAreas.." zones")
 warn("[AutoRespawn] Active")
 warn("[LineShotNuker] Ready")
 warn("[FusionTracker] Active")
