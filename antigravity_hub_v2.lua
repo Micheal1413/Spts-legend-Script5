@@ -37,7 +37,16 @@ local fsClickInterval = 0.1  -- seconds between FS_Train fires
 if _G.hubKillFlag then _G.hubKillFlag() end
 local hubAlive = true
 _G.nukerRunning = false
-_G.hubKillFlag = function() hubAlive = false; _G.nukerRunning = false end
+_G.hubConnections = {}
+local function track(conn) table.insert(_G.hubConnections, conn); return conn end
+_G.hubKillFlag = function()
+    hubAlive = false
+    _G.nukerRunning = false
+    if _G.hubConnections then
+        for _, c in ipairs(_G.hubConnections) do pcall(function() c:Disconnect() end) end
+        _G.hubConnections = {}
+    end
+end
 
 local lastDeathCFrame = nil
 local dtDivisor       = 20
@@ -275,9 +284,9 @@ end
 
 local character = LP.Character or LP.CharacterAdded:Wait()
 local hrp       = character:WaitForChild("HumanoidRootPart")
-LP.CharacterAdded:Connect(function(c) character=c; hrp=c:WaitForChild("HumanoidRootPart") end)
+track(LP.CharacterAdded:Connect(function(c) character=c; hrp=c:WaitForChild("HumanoidRootPart") end))
 
-LP.Idled:Connect(function() if not antiIdle then return end VirtualUser:CaptureController() VirtualUser:ClickButton2(Vector2.new()) end)
+track(LP.Idled:Connect(function() if not antiIdle then return end VirtualUser:CaptureController() VirtualUser:ClickButton2(Vector2.new()) end))
 task.spawn(function() while task.wait(60) do if antiIdle then VirtualUser:CaptureController() VirtualUser:ClickButton2(Vector2.new()) end end end)
 
 local function getSphereRadius()
@@ -367,16 +376,16 @@ local function tryRegisterModel(model)
     local entry={hrp=rp,hum=hum,model=model,name=model.Name,hitCount=0}
     table.insert(cachedTargets,entry)
     local lastHealth=hum.Health
-    hum.HealthChanged:Connect(function(newHealth)
+    track(hum.HealthChanged:Connect(function(newHealth)
         if newHealth<lastHealth then entry.hitCount+=1 end
         lastHealth=newHealth
         if newHealth<=0 and autoSkipWeak and entry.hitCount<=3 then enabledTargets[model.Name]=false refreshToggleColor(model.Name) end
-    end)
+    end))
 end
 
 local function buildCache() pruneCache(); for _,obj in ipairs(workspace:GetDescendants()) do tryRegisterModel(obj) end end
 
-workspace.DescendantAdded:Connect(function(child)
+track(workspace.DescendantAdded:Connect(function(child)
     if not (child:IsA("Model") and trackable[child.Name]) then return end
     if registeredModels[child] then return end
     task.spawn(function()
@@ -385,7 +394,7 @@ workspace.DescendantAdded:Connect(function(child)
         local hum=child:FindFirstChildOfClass("Humanoid") or child:WaitForChild("Humanoid",3)
         if rp and hum then tryRegisterModel(child) end
     end)
-end)
+end))
 
 task.spawn(buildCache)
 -- periodic rescan removed: DescendantAdded handles all NPC registration (NPCs are depth-1, no missed spawns)
@@ -415,7 +424,7 @@ end
 
 local function hookCharacter(char)
     local hum=char:WaitForChild("Humanoid",10); if not hum then return end
-    hum.Died:Connect(function()
+    track(hum.Died:Connect(function()
         if not _G.AutoRespawnEnabled then return end
         -- disable the game Died script instantly so its camera loop never runs
         pcall(function()
@@ -452,7 +461,7 @@ local function hookCharacter(char)
         end
         fixCamera(newChar)
         warn("[AutoRespawn] Done")
-    end)
+    end))
 end
 
 if LP.Character then
@@ -466,7 +475,7 @@ if LP.Character then
         warn("[AutoRespawn] Join-time load fired")
     end)
 end
-LP.CharacterAdded:Connect(function(char) hookCharacter(char) fixCamera(char) end)
+track(LP.CharacterAdded:Connect(function(char) hookCharacter(char) fixCamera(char) end))
 
 -- GUI
 local sg=Instance.new("ScreenGui"); sg.Name="CombinedHubGui"; sg.ResetOnSpawn=false
@@ -477,7 +486,7 @@ local frameW=340; local pad=10; local iw=frameW-pad*2
 local mainFrame=Instance.new("Frame")
 mainFrame.Size=UDim2.new(0,frameW,0,618); mainFrame.Position=UDim2.new(0.05,0,0.05,0)
 mainFrame.BackgroundColor3=Color3.fromRGB(12,12,18); mainFrame.BorderSizePixel=0
-mainFrame.Active=true; mainFrame.Draggable=true; mainFrame.Parent=sg
+mainFrame.Active=true; mainFrame.Draggable=false; mainFrame.Parent=sg
 Instance.new("UICorner",mainFrame).CornerRadius=UDim.new(0,12)
 local mainStroke=Instance.new("UIStroke",mainFrame); mainStroke.Color=Color3.fromRGB(100,75,150); mainStroke.Thickness=1.5
 
@@ -496,13 +505,14 @@ tabRow.BackgroundTransparency=1; tabRow.Parent=mainFrame
 local tabLayout=Instance.new("UIListLayout"); tabLayout.FillDirection=Enum.FillDirection.Horizontal; tabLayout.Padding=UDim.new(0,6); tabLayout.Parent=tabRow
 
 local function mkTab(txt)
-    local b=Instance.new("TextButton"); b.Size=UDim2.new(0,88,1,0); b.BorderSizePixel=0
+    local b=Instance.new("TextButton"); b.Size=UDim2.new(0.25,-5,1,0); b.BorderSizePixel=0
     b.Font=Enum.Font.GothamBold; b.TextSize=11; b.TextColor3=Color3.fromRGB(140,140,140)
     b.BackgroundColor3=Color3.fromRGB(35,35,45); b.Text=txt; b.Parent=tabRow
     Instance.new("UICorner",b).CornerRadius=UDim.new(0,6); return b
 end
 local hubTabBtn=mkTab("🌌  Hub"); hubTabBtn.TextColor3=Color3.fromRGB(255,255,255); hubTabBtn.BackgroundColor3=Color3.fromRGB(80,55,130)
 local nukerTabBtn=mkTab("⚡  Nuker")
+local worldTabBtn=mkTab("🌍  World")
 local settingsTabBtn=mkTab("⚙️  Settings")
 
 local contentY=76
@@ -585,6 +595,55 @@ local function refreshTrainerBtns()
     end
 end
 
+local _EquipItem   = game:GetService("ReplicatedStorage").RemoteEvents.EquipItem
+local _UnequipItem = game:GetService("ReplicatedStorage").RemoteEvents.UnequipItem
+
+local _invCounts   = {}
+local _invEquipped = {}
+local _invMeta     = {}
+local RARITY_RANK  = {Common=1,Rare=2,Epic=3,Legendary=4,Secret=5,Godly=6}
+local TRAINER_STAT = {BT="BodyToughness", FS="FistStrength", PS="PsychicPower"}
+
+game:GetService("ReplicatedStorage").RemoteEvents.LoadInventory.OnClientEvent:Connect(function(counts, equipped, meta)
+    _invCounts   = counts   or {}
+    _invEquipped = equipped or {}
+    _invMeta     = meta     or {}
+end)
+game:GetService("ReplicatedStorage").RemoteEvents.EquipItem:FireServer("__REQUEST_INVENTORY__")
+
+local function getBestForStat(statKey)
+    local bestId, bestRank = nil, -1
+    for id, count in pairs(_invCounts) do
+        if count and count > 0 then
+            local meta = _invMeta[id]
+            if meta and meta.statBoosts then
+                for boostKey in pairs(meta.statBoosts) do
+                    if boostKey:find(statKey) then
+                        local rank = RARITY_RANK[meta.rarity] or 0
+                        if rank > bestRank then bestRank = rank; bestId = id end
+                        break
+                    end
+                end
+            end
+        end
+    end
+    return bestId
+end
+
+local function autoEquipForTrainer(key)
+    local statKey = TRAINER_STAT[key]
+    if not statKey then return end
+    task.spawn(function()
+        local best = getBestForStat(statKey)
+        for id in pairs(_invEquipped) do
+            if id ~= best then _UnequipItem:FireServer(id); task.wait(0.08) end
+        end
+        if best and not _invEquipped[best] then
+            _EquipItem:FireServer(best)
+        end
+    end)
+end
+
 local function setTrainer(key)
     if key == "JF" then
         _G.JFEnabled = not _G.JFEnabled
@@ -593,6 +652,7 @@ local function setTrainer(key)
             _G.ActiveTrainer = nil
         else
             _G.ActiveTrainer = key
+            autoEquipForTrainer(key)
         end
     end
     refreshTrainerBtns()
@@ -745,6 +805,73 @@ if nukerRunning then
     statusLabel.Text="🔍 Searching..."; statusLabel.TextColor3=Color3.fromRGB(255,200,50)
 end
 
+
+-- WORLD PANEL
+local worldPanel=Instance.new("Frame")
+worldPanel.Size=UDim2.new(1,0,1,-contentY); worldPanel.Position=UDim2.new(0,0,0,contentY)
+worldPanel.BackgroundTransparency=1; worldPanel.Visible=false; worldPanel.Parent=mainFrame
+
+local function mkWH(y,txt)
+    local l=Instance.new("TextLabel"); l.Size=UDim2.new(0,iw,0,14); l.Position=UDim2.new(0,pad,0,y)
+    l.BackgroundTransparency=1; l.Font=Enum.Font.GothamBold; l.TextSize=10
+    l.TextColor3=Color3.fromRGB(100,100,100); l.TextXAlignment=Enum.TextXAlignment.Left
+    l.Text=txt; l.Parent=worldPanel; return l
+end
+local function mkWToggle(y,lbl)
+    local b=Instance.new("TextButton"); b.Size=UDim2.new(0,iw,0,28); b.Position=UDim2.new(0,pad,0,y)
+    b.BorderSizePixel=0; b.Font=Enum.Font.GothamBold; b.TextSize=11
+    b.TextColor3=Color3.fromRGB(110,110,110); b.BackgroundColor3=Color3.fromRGB(55,55,55)
+    b.Text=lbl; b.Parent=worldPanel; Instance.new("UICorner",b).CornerRadius=UDim.new(0,5); return b
+end
+
+local _G_FortLock = false
+local _fortConn = nil
+
+local function getFlagPrompt()
+    local flag = workspace:FindFirstChild("Flag"); if not flag then return nil,nil end
+    local fg = flag:FindFirstChild("Flag Group"); if not fg then return nil,nil end
+    local fp = fg:FindFirstChild("FlagPole"); if not fp then return nil,nil end
+    return flag, fp:FindFirstChildOfClass("ProximityPrompt")
+end
+
+local function captureFlag()
+    local flag, prompt = getFlagPrompt(); if not prompt then return end
+    local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart"); if not hrp then return end
+    local savedCF = hrp.CFrame
+    prompt.HoldDuration = 0; prompt.MaxActivationDistance = 9999
+    hrp.CFrame = prompt.Parent.CFrame * CFrame.new(0,0,3)
+    task.wait(0.08) -- wait for server to replicate position
+    -- spam fire to bypass server-side hold duration
+    for i=1,5 do fireproximityprompt(prompt) end
+    -- poll until confirmed or 2s timeout, then snap back
+    local t = tick()
+    repeat task.wait(0.05) until (flag and flag:GetAttribute("OwnerName") == LP.Name) or tick()-t > 2
+    hrp.CFrame = savedCF
+end
+
+mkWH(6,"FORT (ban risk)")
+local fortLockBtn = mkWToggle(22,"⭕  Fort Lock: Off")
+
+fortLockBtn.MouseButton1Click:Connect(function()
+    _G_FortLock = not _G_FortLock
+    TweenService:Create(fortLockBtn,TweenInfo.new(0.15),{BackgroundColor3=_G_FortLock and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)}):Play()
+    fortLockBtn.TextColor3 = _G_FortLock and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
+    fortLockBtn.Text = _G_FortLock and "🟢  Fort Lock: On" or "⭕  Fort Lock: Off"
+    if _G_FortLock then
+        local flag = workspace:FindFirstChild("Flag")
+        if flag and flag:GetAttribute("OwnerName") ~= LP.Name then captureFlag() end
+        if flag then
+            _fortConn = track(flag:GetAttributeChangedSignal("OwnerName"):Connect(function()
+                if not _G_FortLock then return end
+                if flag:GetAttribute("OwnerName") ~= LP.Name then
+                    captureFlag()
+                end
+            end))
+        end
+    else
+        if _fortConn then _fortConn:Disconnect(); _fortConn = nil end
+    end
+end)
 -- SETTINGS PANEL
 local settingsPanel=Instance.new("Frame")
 settingsPanel.Size=UDim2.new(1,0,1,-contentY); settingsPanel.Position=UDim2.new(0,0,0,contentY)
@@ -895,9 +1022,9 @@ spoofToggle.MouseButton1Click:Connect(function()
                     plNameLabel = v
                     v.Text = fakeName
                     if plNameConn then plNameConn:Disconnect() end
-                    plNameConn = v:GetPropertyChangedSignal("Text"):Connect(function()
+                    plNameConn = track(v:GetPropertyChangedSignal("Text"):Connect(function()
                         if spoofEnabled and v.Text ~= fakeName then v.Text = fakeName end
-                    end)
+                    end))
                     break
                 end
             end
@@ -906,9 +1033,9 @@ spoofToggle.MouseButton1Click:Connect(function()
             spoofRefs.conns = {}
             local function hookLabel(lbl, getter)
                 if not lbl then return end
-                table.insert(spoofRefs.conns, lbl:GetPropertyChangedSignal("Text"):Connect(function()
+                table.insert(spoofRefs.conns, track(lbl:GetPropertyChangedSignal("Text"):Connect(function()
                     if spoofEnabled then local v = getter() if lbl.Text ~= v then lbl.Text = v end end
-                end))
+                end)))
             end
             hookLabel(spoofRefs.nameLabel,   function() return "Name : "       .. fakeName  end)
             hookLabel(spoofRefs.gangLabel,    function() return "Squad : "      .. fakeSquad end)
@@ -945,8 +1072,8 @@ refreshSpoofUI()
 
 -- TAB SWITCHING
 local function switchTab(tab)
-    hubPanel.Visible=(tab=="hub"); nukerPanel.Visible=(tab=="nuker"); settingsPanel.Visible=(tab=="settings")
-    local tabs = {hub=hubTabBtn, nuker=nukerTabBtn, settings=settingsTabBtn}
+    hubPanel.Visible=(tab=="hub"); nukerPanel.Visible=(tab=="nuker"); settingsPanel.Visible=(tab=="settings"); worldPanel.Visible=(tab=="world")
+    local tabs = {hub=hubTabBtn, nuker=nukerTabBtn, settings=settingsTabBtn, world=worldTabBtn}
     for k,b in pairs(tabs) do
         local on=(k==tab)
         TweenService:Create(b,TweenInfo.new(0.15),{BackgroundColor3=on and Color3.fromRGB(80,55,130) or Color3.fromRGB(35,35,45)}):Play()
@@ -956,6 +1083,7 @@ end
 hubTabBtn.MouseButton1Click:Connect(function() switchTab("hub") end)
 nukerTabBtn.MouseButton1Click:Connect(function() switchTab("nuker") end)
 settingsTabBtn.MouseButton1Click:Connect(function() switchTab("settings") end)
+worldTabBtn.MouseButton1Click:Connect(function() switchTab("world") end)
 switchTab("hub")
 
 -- DRAG
@@ -1238,7 +1366,7 @@ task.spawn(function()
         lastWeightIdx = newIdx
         local lastJumpTime = tick()
         warn(string.format("[JF] Started - weight: %s", newIdx > 0 and weightData[newIdx].title or "Unequipped"))
-        jfConn = game:GetService("RunService").Heartbeat:Connect(function()
+        jfConn = track(game:GetService("RunService").Heartbeat:Connect(function()
             if not _G.JFEnabled then lastState = hum:GetState(); return end
             local curIdx = getBestWeightIndex()
             if curIdx ~= lastWeightIdx then
@@ -1259,19 +1387,19 @@ task.spawn(function()
                 task.delay(0.06, function() doJump() end)
             end
             lastState = state
-        end)
+        end))
         task.delay(0.1, function() doJump() end)
     end
 
-    UIS:GetPropertyChangedSignal("ModalEnabled"):Connect(function()
+    track(UIS:GetPropertyChangedSignal("ModalEnabled"):Connect(function()
         if not _G.JFEnabled then return end
         if not UIS.ModalEnabled then
             task.delay(0.15, function() doJump() end)
         end
-    end)
+    end))
 
     local wasJF = false
-    game:GetService("RunService").Heartbeat:Connect(function()
+    track(game:GetService("RunService").Heartbeat:Connect(function()
         local isJF = (_G.JFEnabled == true)
         if isJF and not wasJF then
             hookJF()
@@ -1282,13 +1410,13 @@ task.spawn(function()
             warn("[JF] Stopped - weight unequipped")
         end
         wasJF = isJF
-    end)
+    end))
 
-    LP.CharacterAdded:Connect(function()
+    track(LP.CharacterAdded:Connect(function()
         task.wait(1.5)
         lastWeightIdx = -1
         if _G.JFEnabled then hookJF() end
-    end)
+    end))
 end)
 warn("[AG] Ready — BT:"..#btAreas.." FS:"..#fsAreas.." PS:"..#psAreas.." zones")
 warn("[AutoRespawn] Active")
