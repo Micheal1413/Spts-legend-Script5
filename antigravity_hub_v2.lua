@@ -243,12 +243,13 @@ if _sv then
     autoSkipWeak = lB(_sv, "autoSkipWeak", true)
     priorityMode = lB(_sv, "priorityMode", true)
     _G.JFEnabled  = lB(_sv, "jfEnabled",     false)
+    fsAutoClick   = lB(_sv, "fsAutoClick",   false)
 end
 local function saveSettings()
     local at = _G.ActiveTrainer and ('"' .. _G.ActiveTrainer .. '"') or "null"
     local et = enabledTargets
     local json = string.format(
-        '{"activeTrainer":%s,"autoRespawn":%s,"arTeleportBack":%s,"autoQuest":%s,"teleportMode":%s,"antiIdle":%s,"nukerRunning":%s,"autoSkipWeak":%s,"priorityMode":%s,"jfEnabled":%s,"Noob":%s,"Thug":%s,"Mafia":%s,"WereWolf":%s,"Robot":%s,"Sath":%s,"Phantom":%s}',
+        '{"activeTrainer":%s,"autoRespawn":%s,"arTeleportBack":%s,"autoQuest":%s,"teleportMode":%s,"antiIdle":%s,"nukerRunning":%s,"autoSkipWeak":%s,"priorityMode":%s,"jfEnabled":%s,"fsAutoClick":%s,"Noob":%s,"Thug":%s,"Mafia":%s,"WereWolf":%s,"Robot":%s,"Sath":%s,"Phantom":%s}',
         at,
         tostring(_G.AutoRespawnEnabled),
         tostring(_G.ARTeleportBack),
@@ -259,6 +260,7 @@ local function saveSettings()
         tostring(autoSkipWeak),
         tostring(priorityMode),
         tostring(_G.JFEnabled == true),
+        tostring(fsAutoClick),
         tostring(manualTargets.Noob),
         tostring(manualTargets.Thug),
         tostring(manualTargets.Mafia),
@@ -385,13 +387,13 @@ workspace.DescendantAdded:Connect(function(child)
     end)
 end)
 
-buildCache()
-task.spawn(function() while true do task.wait(10) buildCache() end end)
+task.spawn(buildCache)
+-- periodic rescan removed: DescendantAdded handles all NPC registration (NPCs are depth-1, no missed spawns)
 
 -- RESPAWN / CAMERA
 local function restoreUI()
     local pg=LP.PlayerGui
-    for _,name in ipairs({"MainGui","QuestsGui","WeightGui","SkillCooldowns"}) do local gui=pg:FindFirstChild(name) if gui then gui.Enabled=true end end
+    for _,name in ipairs({"MainGui","QuestsGui","SkillCooldowns"}) do local gui=pg:FindFirstChild(name) if gui then gui.Enabled=true end end
     local ig=pg:FindFirstChild("IntroGui"); if ig then ig.Enabled=false end
     StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack,true)
     TweenService:Create(Lighting.Blur,TweenInfo.new(0.4),{Size=0}):Play()
@@ -415,17 +417,30 @@ local function hookCharacter(char)
     local hum=char:WaitForChild("Humanoid",10); if not hum then return end
     hum.Died:Connect(function()
         if not _G.AutoRespawnEnabled then return end
+        -- disable the game Died script instantly so its camera loop never runs
+        pcall(function()
+            local diedScript = char:FindFirstChild("Died")
+            if diedScript then diedScript.Enabled = false end
+        end)
         local crp=char:FindFirstChild("HumanoidRootPart"); if crp then lastDeathCFrame=crp.CFrame end
-        task.wait(0.05); RefreshCharacter:FireServer()
+        task.wait(0.05)
+        -- kill the game death tween immediately so camera snaps back on respawn
+        pcall(function()
+            game:GetService("TweenService"):Create(Camera, TweenInfo.new(0), {CFrame=Camera.CFrame}):Cancel()
+            Camera.CameraType = Enum.CameraType.Custom
+            LP.PlayerGui.IntroGui.Enabled = false
+            game:GetService("TweenService"):Create(game:GetService("Lighting").Blur, TweenInfo.new(0.15), {Size=0}):Play()
+        end)
+        RefreshCharacter:FireServer()
         local newChar=LP.CharacterAdded:Wait()
         local newHum=newChar:WaitForChild("Humanoid",5)
         local newCRP=newChar:WaitForChild("HumanoidRootPart",5)
         if newHum then Camera.CameraType=Enum.CameraType.Custom; Camera.CameraSubject=newHum end
-        task.wait(0.2)
-        Loaded:FireServer(); task.wait(0.05)
+        task.wait(0.05)
+        Loaded:FireServer()
         restoreUI()
         if _G.ARTeleportBack and newCRP then
-            task.wait(0.05)
+
             if _G.activeTrainArea then
                 if not isInsideArea(newCRP.Position, _G.activeTrainArea) then
                     newCRP.CFrame = getAreaLandCFrame(_G.activeTrainArea)
