@@ -279,7 +279,7 @@ local function saveSettings()
 end
 
 local character = LP.Character or LP.CharacterAdded:Wait()
-local hrp       = character:WaitForChild("HumanoidRootPart")
+local hrp       = character:WaitForChild("HumanoidRootPart", 5)
 track(LP.CharacterAdded:Connect(function(c) character=c; hrp=c:WaitForChild("HumanoidRootPart") end))
 
 track(LP.Idled:Connect(function() if not antiIdle then return end VirtualUser:CaptureController() VirtualUser:ClickButton2(Vector2.new()) end))
@@ -441,7 +441,7 @@ local function hookCharacter(char)
         local newHum=newChar:WaitForChild("Humanoid",5)
         local newCRP=newChar:WaitForChild("HumanoidRootPart",5)
         if newHum then Camera.CameraType=Enum.CameraType.Custom; Camera.CameraSubject=newHum end
-        task.wait(0.05)
+        task.wait(0.025)
         Loaded:FireServer()
         restoreUI()
         if _G.ARTeleportBack and newCRP and not _G.dtModeActive then
@@ -611,15 +611,18 @@ end)
 game:GetService("ReplicatedStorage").RemoteEvents.EquipItem:FireServer("__REQUEST_INVENTORY__")
 
 local function getBestForStat(statKey)
-    local bestId, bestRank = nil, -1
+    local bestId, bestValue = nil, -1
     for id, count in pairs(_invCounts) do
         if count and count > 0 then
             local meta = _invMeta[id]
             if meta and meta.statBoosts then
-                for boostKey in pairs(meta.statBoosts) do
+                for boostKey, val in pairs(meta.statBoosts) do
                     if boostKey:find(statKey) then
-                        local rank = RARITY_RANK[meta.rarity] or 0
-                        if rank > bestRank then bestRank = rank; bestId = id end
+                        local numVal = tonumber(val) or 0
+                        if numVal > bestValue then
+                            bestValue = numVal
+                            bestId = id
+                        end
                         break
                     end
                 end
@@ -1042,7 +1045,6 @@ local function buildSpoofRefs()
         refs.origGangName   = refs.gangName   and refs.gangName.Text:match("Squad Name : (.+)") or ""
         refs.origNotice1    = refs.notice1    and refs.notice1.Text or ""
         refs.origNotice2    = refs.notice2    and refs.notice2.Text or ""
-        refs.origOverheadG  = refs.overheadGang and refs.overheadGang.Text or ""
     end
     local char = LP.Character
     local head = char and char:FindFirstChild("Head")
@@ -1051,6 +1053,11 @@ local function buildSpoofRefs()
         refs.overheadName = bb:FindFirstChild("NameLabel")
         local gangFr = bb:FindFirstChild("Gang_Frame")
         refs.overheadGang = gangFr and gangFr:FindFirstChild("Gang_Txt")
+    end
+    if refs.overheadGang then
+        refs.origOverheadG = refs.overheadGang.Text
+    else
+        refs.origOverheadG = ""
     end
     return refs
 end
@@ -1421,8 +1428,9 @@ task.spawn(function()
                 for k2, v3 in pairs(v.Tasks) do
                     local claimedKey = prefix .. k .. k2
                     if LP:GetAttribute(claimedKey) then continue end
-                    local startVal = LP:GetAttribute(prefix .. k2 .. "Start") or 0
-                    if startVal >= v3 then
+                    local completed = false
+                    pcall(function() completed = qt.mod:Completed(LP, v, k2) end)
+                    if completed then
                         timerQuestClaim:FireServer(k, k2, qt.label)
                         task.wait(0.3)
                     end
