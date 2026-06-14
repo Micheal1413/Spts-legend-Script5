@@ -602,49 +602,102 @@ local _invEquipped = {}
 local _invMeta     = {}
 local RARITY_RANK  = {Common=1,Rare=2,Epic=3,Legendary=4,Secret=5,Godly=6}
 local TRAINER_STAT = {BT="BodyToughness", FS="FistStrength", PS="PsychicPower"}
+local UNIVERSAL_ITEMS = {AncientStar=true, BlackHole=true}
+local _lastBestId  = {} -- key -> last best item id chosen for that trainer
 
-game:GetService("ReplicatedStorage").RemoteEvents.LoadInventory.OnClientEvent:Connect(function(counts, equipped, meta)
-    _invCounts   = counts   or {}
-    _invEquipped = equipped or {}
-    _invMeta     = meta     or {}
-end)
-game:GetService("ReplicatedStorage").RemoteEvents.EquipItem:FireServer("__REQUEST_INVENTORY__")
+local function isUniversal(id)
+    return id and UNIVERSAL_ITEMS[id] == true
+end
 
-local function getBestForStat(statKey)
-    local bestId, bestValue = nil, -1
+-- Returns a list of owned item ids that boost statKey, ranked best-to-worst
+-- by their boost value. Only includes items with count > 0.
+local function getRankedForStat(statKey)
+    local ranked = {}
     for id, count in pairs(_invCounts) do
         if count and count > 0 then
             local meta = _invMeta[id]
             if meta and meta.statBoosts then
                 for boostKey, val in pairs(meta.statBoosts) do
                     if boostKey:find(statKey) then
-                        local numVal = tonumber(val) or 0
-                        if numVal > bestValue then
-                            bestValue = numVal
-                            bestId = id
-                        end
+                        table.insert(ranked, {id=id, value=tonumber(val) or 0})
                         break
                     end
                 end
             end
         end
     end
-    return bestId
+    table.sort(ranked, function(a,b) return a.value > b.value end)
+    return ranked
 end
 
+local function getBestForStat(statKey)
+    local ranked = getRankedForStat(statKey)
+    return ranked[1] and ranked[1].id or nil
+end
+
+-- Equips up to 3 of the best owned items for the active trainer's stat
+-- (1 if you only own 1, 2 if you own 2, 3 if you own 3+), filling all
+-- available slots. Universal items already equipped are left alone and
+-- count toward the 3-slot cap.
 local function autoEquipForTrainer(key)
     local statKey = TRAINER_STAT[key]
     if not statKey then return end
     task.spawn(function()
-        local best = getBestForStat(statKey)
+        local ranked = getRankedForStat(statKey)
+        _lastBestId[key] = ranked[1] and ranked[1].id or nil
+
+        -- figure out how many slots are free for stat items (reserve slots
+        -- already taken by universal items)
+        local universalEquipped = 0
         for id in pairs(_invEquipped) do
-            if id ~= best then _UnequipItem:FireServer(id); task.wait(0.08) end
+            if isUniversal(id) then universalEquipped += 1 end
         end
-        if best and not _invEquipped[best] then
-            _EquipItem:FireServer(best)
+        local maxSlots = 3
+        local statSlots = math.max(0, maxSlots - universalEquipped)
+
+        -- desired set: top N ranked items for this stat (N = statSlots)
+        local desired = {}
+        for i = 1, math.min(statSlots, #ranked) do
+            desired[ranked[i].id] = true
+        end
+
+        -- unequip anything that isn't universal and isn't in the desired set
+        for id in pairs(_invEquipped) do
+            if not isUniversal(id) and not desired[id] then
+                _UnequipItem:FireServer(id); task.wait(0.08)
+            end
+        end
+
+        -- equip everything in the desired set that isn't already equipped
+        for id in pairs(desired) do
+            if not _invEquipped[id] then
+                _EquipItem:FireServer(id); task.wait(0.08)
+            end
         end
     end)
 end
+
+-- Smart re-check: only re-equips when the inventory update actually changes
+-- the best-ranked item for the currently active trainer's stat. No polling/
+-- timers -- runs only when the server pushes a LoadInventory update.
+local function maybeReEquip()
+    local key = _G.ActiveTrainer
+    local statKey = key and TRAINER_STAT[key]
+    if not statKey then return end -- no trainer active, or JF (no stat item)
+
+    local best = getBestForStat(statKey)
+    if best == _lastBestId[key] then return end -- nothing changed, skip
+
+    autoEquipForTrainer(key)
+end
+
+game:GetService("ReplicatedStorage").RemoteEvents.LoadInventory.OnClientEvent:Connect(function(counts, equipped, meta)
+    _invCounts   = counts   or {}
+    _invEquipped = equipped or {}
+    _invMeta     = meta     or {}
+    maybeReEquip()
+end)
+game:GetService("ReplicatedStorage").RemoteEvents.EquipItem:FireServer("__REQUEST_INVENTORY__")
 
 local function setTrainer(key)
     if key == "JF" then
