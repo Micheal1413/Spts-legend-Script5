@@ -268,11 +268,13 @@ _G.AutoBoxTiers = {
     Tier3 = lB(_svStr, "boxTier3", true),
     Tier4 = lB(_svStr, "boxTier4", true),
 }
+_G.AutoMergerEnabled = lB(_svStr, "autoMerger", false)
+_G.AutoMergerInterval = lN(_svStr, "autoMergerInterval", 0.3)
 local function saveSettings()
     local at = _G.ActiveTrainer and ('"' .. _G.ActiveTrainer .. '"') or "null"
     local et = enabledTargets
     local json = string.format(
-        '{"activeTrainer":%s,"autoRespawn":%s,"arTeleportBack":%s,"autoQuest":%s,"autoEquip":%s,"autoBox":%s,"teleportMode":%s,"antiIdle":%s,"nukerRunning":%s,"autoSkipWeak":%s,"priorityMode":%s,"jfEnabled":%s,"fsAutoClick":%s,"Noob":%s,"Thug":%s,"Mafia":%s,"WereWolf":%s,"Robot":%s,"Sath":%s,"Phantom":%s,"autoBoxInterval":%s,"autoRoll":%s,"boxTier1":%s,"boxTier2":%s,"boxTier3":%s,"boxTier4":%s}',
+        '{"activeTrainer":%s,"autoRespawn":%s,"arTeleportBack":%s,"autoQuest":%s,"autoEquip":%s,"autoBox":%s,"teleportMode":%s,"antiIdle":%s,"nukerRunning":%s,"autoSkipWeak":%s,"priorityMode":%s,"jfEnabled":%s,"fsAutoClick":%s,"Noob":%s,"Thug":%s,"Mafia":%s,"WereWolf":%s,"Robot":%s,"Sath":%s,"Phantom":%s,"autoBoxInterval":%s,"autoRoll":%s,"boxTier1":%s,"boxTier2":%s,"boxTier3":%s,"boxTier4":%s,"autoMerger":%s,"autoMergerInterval":%s}',
         at,
         tostring(_G.AutoRespawnEnabled),
         tostring(_G.ARTeleportBack),
@@ -298,7 +300,9 @@ local function saveSettings()
         tostring(_G.AutoBoxTiers and _G.AutoBoxTiers.Tier1 == true),
         tostring(_G.AutoBoxTiers and _G.AutoBoxTiers.Tier2 == true),
         tostring(_G.AutoBoxTiers and _G.AutoBoxTiers.Tier3 == true),
-        tostring(_G.AutoBoxTiers and _G.AutoBoxTiers.Tier4 == true)
+        tostring(_G.AutoBoxTiers and _G.AutoBoxTiers.Tier4 == true),
+        tostring(_G.AutoMergerEnabled == true),
+        tostring(_G.AutoMergerInterval or 0.1)
     )
     local ok, err = pcall(function() if writefile then writefile(SETTINGS_FILE, json) end end)
     if not ok then warn("[Settings] Save failed: " .. tostring(err)) end
@@ -1137,7 +1141,152 @@ do
         saveSettings()
     end)
 
-    mkBH(60, "TIERS TO OPEN")
+    if not _G.AutoMergerEnabled then _G.AutoMergerEnabled = false end
+    if not _G.AutoMergerInterval then _G.AutoMergerInterval = 0.3 end
+
+    local mergerBtn=Instance.new("TextButton")
+    mergerBtn.Size=UDim2.new(0,iw,0,28)
+    mergerBtn.Position=UDim2.new(0,pad,0,56)
+    mergerBtn.BorderSizePixel=0
+    mergerBtn.Font=Enum.Font.GothamBold
+    mergerBtn.TextSize=13
+    mergerBtn.Text= _G.AutoMergerEnabled and "Auto Merger: ON" or "Auto Merger: OFF"
+    mergerBtn.BackgroundColor3= _G.AutoMergerEnabled and Color3.fromRGB(60,160,80) or Color3.fromRGB(160,60,60)
+    mergerBtn.TextColor3=Color3.fromRGB(255,255,255)
+    mergerBtn.Parent=boxesPanel
+    Instance.new("UICorner",mergerBtn).CornerRadius=UDim.new(0,5)
+
+    local mergeStatusLbl=Instance.new("TextLabel")
+    mergeStatusLbl.Size=UDim2.new(0,iw,0,14)
+    mergeStatusLbl.Position=UDim2.new(0,pad,0,88)
+    mergeStatusLbl.BackgroundTransparency=1
+    mergeStatusLbl.Font=Enum.Font.Gotham
+    mergeStatusLbl.TextSize=10
+    mergeStatusLbl.TextColor3=Color3.fromRGB(160,160,160)
+    mergeStatusLbl.TextXAlignment=Enum.TextXAlignment.Left
+    mergeStatusLbl.Text="Merges: idle"
+    mergeStatusLbl.Parent=boxesPanel
+
+    local mergeSpeedLbl=Instance.new("TextLabel")
+    mergeSpeedLbl.Size=UDim2.new(0,50,0,14)
+    mergeSpeedLbl.Position=UDim2.new(1,-pad-50,0,88)
+    mergeSpeedLbl.BackgroundTransparency=1
+    mergeSpeedLbl.Font=Enum.Font.GothamBold
+    mergeSpeedLbl.TextSize=10
+    mergeSpeedLbl.TextColor3=Color3.fromRGB(200,180,255)
+    mergeSpeedLbl.TextXAlignment=Enum.TextXAlignment.Right
+    local _initLagWarn = _G.AutoMergerInterval < 0.7 and " ⚠ lag" or ""
+    mergeSpeedLbl.Text=string.format("%.2fs",_G.AutoMergerInterval).._initLagWarn
+    mergeSpeedLbl.Parent=boxesPanel
+
+    local mSliderBg=Instance.new("Frame")
+    mSliderBg.Size=UDim2.new(1,-pad*2,0,5)
+    mSliderBg.Position=UDim2.new(0,pad,0,106)
+    mSliderBg.BackgroundColor3=Color3.fromRGB(55,55,55)
+    mSliderBg.BorderSizePixel=0
+    mSliderBg.Active=true
+    mSliderBg.Parent=boxesPanel
+    Instance.new("UICorner",mSliderBg).CornerRadius=UDim.new(1,0)
+
+    local mSliderFill=Instance.new("Frame")
+    local mMinI,mMaxI=0.3,5
+    local function mPct(v) return math.clamp((v-mMinI)/(mMaxI-mMinI),0,1) end
+    mSliderFill.Size=UDim2.new(mPct(_G.AutoMergerInterval),0,1,0)
+    mSliderFill.BackgroundColor3=Color3.fromRGB(120,90,200)
+    mSliderFill.BorderSizePixel=0
+    mSliderFill.Parent=mSliderBg
+    Instance.new("UICorner",mSliderFill).CornerRadius=UDim.new(1,0)
+
+    local mSliderBtn=Instance.new("TextButton")
+    mSliderBtn.Size=UDim2.new(0,12,0,12)
+    mSliderBtn.AnchorPoint=Vector2.new(0.5,0.5)
+    mSliderBtn.Position=UDim2.new(mPct(_G.AutoMergerInterval),0,0.5,0)
+    mSliderBtn.BackgroundColor3=Color3.fromRGB(200,180,255)
+    mSliderBtn.BorderSizePixel=0
+    mSliderBtn.Text=""
+    mSliderBtn.Parent=mSliderBg
+    Instance.new("UICorner",mSliderBtn).CornerRadius=UDim.new(1,0)
+
+    local UIS2 = game:GetService("UserInputService")
+    local draggingMergeSlider = false
+    local function updateMergeSlider(x)
+        local rel=(x-mSliderBg.AbsolutePosition.X)/mSliderBg.AbsoluteSize.X
+        rel=math.clamp(rel,0,1)
+        _G.AutoMergerInterval=mMinI+rel*(mMaxI-mMinI)
+        mSliderFill.Size=UDim2.new(rel,0,1,0)
+        mSliderBtn.Position=UDim2.new(rel,0,0.5,0)
+        local lagWarn = _G.AutoMergerInterval < 0.7 and " ⚠ lag" or ""
+        local _initLagWarn = _G.AutoMergerInterval < 0.7 and " ⚠ lag" or ""
+    mergeSpeedLbl.Text=string.format("%.2fs",_G.AutoMergerInterval).._initLagWarn..lagWarn
+    end
+    mSliderBtn.MouseButton1Down:Connect(function() draggingMergeSlider=true end)
+    mSliderBtn.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch then draggingMergeSlider=true end end)
+    mSliderBg.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch then draggingMergeSlider=true; updateMergeSlider(i.Position.X) end
+    end)
+    UIS2.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+            if draggingMergeSlider then saveSettings() end
+            draggingMergeSlider=false
+        end
+    end)
+    UIS2.InputChanged:Connect(function(i)
+        if not draggingMergeSlider then return end
+        if i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch then
+            updateMergeSlider(i.Position.X)
+        end
+    end)
+
+    mergerBtn.MouseButton1Click:Connect(function()
+        _G.AutoMergerEnabled = not _G.AutoMergerEnabled
+        mergerBtn.Text = _G.AutoMergerEnabled and "Auto Merger: ON" or "Auto Merger: OFF"
+        mergerBtn.BackgroundColor3 = _G.AutoMergerEnabled and Color3.fromRGB(60,160,80) or Color3.fromRGB(160,60,60)
+        saveSettings()
+    end)
+
+    task.spawn(function()
+        local RemEv = game:GetService("ReplicatedStorage").RemoteEvents
+        local invData = nil
+        local itemMeta = nil
+        RemEv.LoadInventory.OnClientEvent:Connect(function(p1,_,p3)
+            invData = p1
+            itemMeta = p3
+        end)
+        while hubAlive do
+            if not _G.AutoMergerEnabled then mergeStatusLbl.Text="Merges: idle"; task.wait(0.5); continue end
+            if not invData or not itemMeta then mergeStatusLbl.Text="Merges: waiting inv..."; task.wait(0.5); continue end
+            local mergedCount = 0
+            local changed = true
+            while changed do
+                changed = false
+                local toMerge = {}
+                for itemName, count in pairs(invData) do
+                    local meta = itemMeta[itemName]
+                    if meta and meta.nextTierItem and meta.mergeCost and count >= meta.mergeCost then
+                        table.insert(toMerge, {name=itemName, next=meta.nextTierItem, cost=meta.mergeCost, count=count})
+                    end
+                end
+                if #toMerge == 0 then break end
+                for _, m in ipairs(toMerge) do
+                    local times = math.floor((invData[m.name] or 0) / m.cost)
+                    if times > 0 then
+                        for _=1,times do
+                            RemEv.MergeItem:FireServer(m.name)
+                            invData[m.name] = (invData[m.name] or 0) - m.cost
+                            invData[m.next] = (invData[m.next] or 0) + 1
+                            mergedCount = mergedCount + 1
+                        end
+                        changed = true
+                    end
+                end
+                task.wait(_G.AutoMergerInterval or 0.1)
+            end
+            mergeStatusLbl.Text = mergedCount > 0 and ("Merged: "..mergedCount.." items") or "Merges: nothing to merge"
+            task.wait(_G.AutoMergerInterval or 0.1)
+        end
+    end)
+
+    mkBH(130, "TIERS TO OPEN")
 
     local tierBtns = {}
     for i, tier in ipairs(BOX_TIER_ORDER) do
@@ -1149,7 +1298,7 @@ do
         local bw=(iw-30)/4
         local tb=Instance.new("TextButton")
         tb.Size=UDim2.new(0,bw,0,26)
-        tb.Position=UDim2.new(0,pad+(i-1)*(bw+10),0,76)
+        tb.Position=UDim2.new(0,pad+(i-1)*(bw+10),0,146)
         tb.BorderSizePixel=0
         tb.Font=Enum.Font.GothamBold
         tb.TextSize=12
@@ -1168,11 +1317,11 @@ do
         tierBtns[tier]=tb
     end
 
-    mkBH(114, "OPEN INTERVAL")
+    mkBH(184, "OPEN INTERVAL")
 
     local speedLbl=Instance.new("TextLabel")
     speedLbl.Size=UDim2.new(0,50,0,16)
-    speedLbl.Position=UDim2.new(1,-pad-50,0,112)
+    speedLbl.Position=UDim2.new(1,-pad-50,0,182)
     speedLbl.BackgroundTransparency=1
     speedLbl.Font=Enum.Font.GothamBold
     speedLbl.TextSize=11
@@ -1184,7 +1333,7 @@ do
 
     local sliderBg=Instance.new("Frame")
     sliderBg.Size=UDim2.new(1,-pad*2,0,6)
-    sliderBg.Position=UDim2.new(0,pad,0,134)
+    sliderBg.Position=UDim2.new(0,pad,0,204)
     sliderBg.BackgroundColor3=Color3.fromRGB(55,55,55)
     sliderBg.BorderSizePixel=0
     sliderBg.Active=true
@@ -1243,10 +1392,10 @@ do
         end
     end)
 
-    mkBH(154, "STATUS")
-    local tokensLbl=mkBL("Tokens: --", 170)
-    local targetLbl=mkBL("Targeting: --", 192)
-    local lastDropLbl=mkBL("Last drop: --", 214)
+    mkBH(224, "STATUS")
+    local tokensLbl=mkBL("Tokens: --", 240)
+    local targetLbl=mkBL("Targeting: --", 258)
+    local lastDropLbl=mkBL("Last drop: --", 276)
 
     task.spawn(function()
         while hubAlive do
