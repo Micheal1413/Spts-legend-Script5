@@ -28,6 +28,8 @@ local FS_Train         = RemoteEvents.FS_Train
 local SetWeight        = RemoteEvents.SetWeight
 
 _G.ActiveTrainer      = nil
+_G.AutoEquipEnabled   = true
+_G.AutoBoxEnabled     = false
 _G.AutoRespawnEnabled = true
 _G.ARTeleportBack     = true
 _G.AutoQuestEnabled   = true
@@ -232,6 +234,8 @@ if _sv then
     _G.AutoRespawnEnabled = lB(_sv, "autoRespawn",    true)
     _G.ARTeleportBack     = lB(_sv, "arTeleportBack", true)
     _G.AutoQuestEnabled   = lB(_sv, "autoQuest",      true)
+    _G.AutoEquipEnabled   = lB(_sv, "autoEquip",      true)
+    _G.AutoBoxEnabled     = lB(_sv, "autoBox",        false)
     manualTargets.Noob     = lB(_sv, "Noob",     true)
     manualTargets.Thug     = lB(_sv, "Thug",     true)
     manualTargets.Mafia    = lB(_sv, "Mafia",    true)
@@ -254,11 +258,13 @@ local function saveSettings()
     local at = _G.ActiveTrainer and ('"' .. _G.ActiveTrainer .. '"') or "null"
     local et = enabledTargets
     local json = string.format(
-        '{"activeTrainer":%s,"autoRespawn":%s,"arTeleportBack":%s,"autoQuest":%s,"teleportMode":%s,"antiIdle":%s,"nukerRunning":%s,"autoSkipWeak":%s,"priorityMode":%s,"jfEnabled":%s,"fsAutoClick":%s,"Noob":%s,"Thug":%s,"Mafia":%s,"WereWolf":%s,"Robot":%s,"Sath":%s,"Phantom":%s}',
+        '{"activeTrainer":%s,"autoRespawn":%s,"arTeleportBack":%s,"autoQuest":%s,"autoEquip":%s,"autoBox":%s,"teleportMode":%s,"antiIdle":%s,"nukerRunning":%s,"autoSkipWeak":%s,"priorityMode":%s,"jfEnabled":%s,"fsAutoClick":%s,"Noob":%s,"Thug":%s,"Mafia":%s,"WereWolf":%s,"Robot":%s,"Sath":%s,"Phantom":%s}',
         at,
         tostring(_G.AutoRespawnEnabled),
         tostring(_G.ARTeleportBack),
         tostring(_G.AutoQuestEnabled),
+        tostring(_G.AutoEquipEnabled),
+        tostring(_G.AutoBoxEnabled),
         tostring(teleportMode),
         tostring(antiIdle),
         tostring(nukerRunning),
@@ -500,7 +506,7 @@ tabRow.BackgroundTransparency=1; tabRow.Parent=mainFrame
 local tabLayout=Instance.new("UIListLayout"); tabLayout.FillDirection=Enum.FillDirection.Horizontal; tabLayout.Padding=UDim.new(0,6); tabLayout.Parent=tabRow
 
 local function mkTab(txt)
-    local b=Instance.new("TextButton"); b.Size=UDim2.new(0.25,-5,1,0); b.BorderSizePixel=0
+    local b=Instance.new("TextButton"); b.Size=UDim2.new(0.2,-5,1,0); b.BorderSizePixel=0
     b.Font=Enum.Font.GothamBold; b.TextSize=11; b.TextColor3=Color3.fromRGB(140,140,140)
     b.BackgroundColor3=Color3.fromRGB(35,35,45); b.Text=txt; b.Parent=tabRow
     Instance.new("UICorner",b).CornerRadius=UDim.new(0,6); return b
@@ -508,12 +514,14 @@ end
 local hubTabBtn=mkTab("🏠 Hub"); hubTabBtn.TextColor3=Color3.fromRGB(255,255,255); hubTabBtn.BackgroundColor3=Color3.fromRGB(80,55,130)
 local nukerTabBtn=mkTab("💥 Nuker")
 local worldTabBtn=mkTab("🌎 World")
+local boxesTabBtn=mkTab("📦 Boxes")
 local settingsTabBtn=mkTab("⚙️ Settings")
 
 local contentY=76
 
 -- forward declarations for widgets referenced in background loops (made global to avoid Luau 200 local register limit)
-hubPanel, nukerPanel, worldPanel, settingsPanel = nil, nil, nil, nil
+hubPanel, nukerPanel, worldPanel, settingsPanel, boxesPanel = nil, nil, nil, nil, nil
+idleBtn = nil
 areaLbl, modeLbl, btLbl, fsLbl, psLbl, jfLbl, weightLbl, hpLbl, nextLbl, etaLbl, stLbl, arLbl = nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil
 fusStatLbl, fusReqLbl, fusPctLbl, fusRateLbl, fusEtaLbl = nil, nil, nil, nil, nil
 sphereLabel, priorityLabel, statusLabel, mathLabel, errorLabel, startBtn = nil, nil, nil, nil, nil, nil
@@ -547,7 +555,9 @@ local jfBtn = mkHBtn(pad+btnW*3+12,    btnW, 6, 32)
 local arBtn=mkHBtn(pad, math.floor(iw/2)-2, 42, 28)
 local tpBackBtn=mkHBtn(pad+math.floor(iw/2)+2, math.floor(iw/2)-2, 42, 28)
 local aqBtn=mkHBtn(pad, iw, 76, 28)
-local fsClickBtn=mkHBtn(pad, iw, 108, 28)
+local halfW = math.floor((iw - 4) / 2)
+local fsClickBtn=mkHBtn(pad, halfW, 108, 28)
+local aeBtn=mkHBtn(pad+halfW+4, halfW, 108, 28)
 
 local hubDiv=Instance.new("Frame"); hubDiv.Size=UDim2.new(1,-20,0,1); hubDiv.Position=UDim2.new(0,pad,0,140)
 hubDiv.BackgroundColor3=Color3.fromRGB(55,45,75); hubDiv.BorderSizePixel=0; hubDiv.Parent=hubPanel
@@ -640,6 +650,7 @@ end
 -- available slots. Universal items already equipped are left alone and
 -- count toward the 3-slot cap.
 local function autoEquipForTrainer(key)
+    if not _G.AutoEquipEnabled then return end
     local statKey = TRAINER_STAT[key]
     if not statKey then return end
     task.spawn(function()
@@ -681,6 +692,7 @@ end
 -- the best-ranked item for the currently active trainer's stat. No polling/
 -- timers -- runs only when the server pushes a LoadInventory update.
 local function maybeReEquip()
+    if not _G.AutoEquipEnabled then return end
     local key = _G.ActiveTrainer
     local statKey = key and TRAINER_STAT[key]
     if not statKey then return end -- no trainer active, or JF (no stat item)
@@ -749,8 +761,12 @@ local function refreshFSClickBtn()
     fsClickBtn.Text="🥊 FS Auto Click: "..(fsAutoClick and "ON" or "OFF")
     fsClickBtn.BackgroundColor3=fsAutoClick and Color3.fromRGB(30,90,160) or Color3.fromRGB(45,45,55)
 end
+local function refreshAEBtn()
+    aeBtn.Text="🎯 Equip Best (Auto): "..(_G.AutoEquipEnabled and "ON" or "OFF")
+    aeBtn.BackgroundColor3=_G.AutoEquipEnabled and Color3.fromRGB(160,120,30) or Color3.fromRGB(45,45,55)
+end
 
-refreshTrainerBtns(); refreshARBtn(); refreshTPBackBtn(); refreshAQBtn(); refreshFSClickBtn()
+refreshTrainerBtns(); refreshARBtn(); refreshTPBackBtn(); refreshAQBtn(); refreshFSClickBtn(); refreshAEBtn()
 aqBtn.MouseButton1Click:Connect(function() _G.AutoQuestEnabled=not _G.AutoQuestEnabled refreshAQBtn() saveSettings() end)
 arBtn.MouseButton1Click:Connect(function() _G.AutoRespawnEnabled=not _G.AutoRespawnEnabled refreshARBtn() saveSettings() end)
 tpBackBtn.MouseButton1Click:Connect(function() _G.ARTeleportBack=not _G.ARTeleportBack refreshTPBackBtn() saveSettings() end)
@@ -758,6 +774,15 @@ fsClickBtn.MouseButton1Click:Connect(function()
     fsAutoClick = not fsAutoClick
     refreshFSClickBtn()
     warn("[FSClick] Auto Click " .. (fsAutoClick and "ON" or "OFF"))
+end)
+aeBtn.MouseButton1Click:Connect(function()
+    _G.AutoEquipEnabled = not _G.AutoEquipEnabled
+    refreshAEBtn()
+    saveSettings()
+    warn("[AutoEquip] " .. (_G.AutoEquipEnabled and "ON" or "OFF"))
+    if _G.AutoEquipEnabled and _G.ActiveTrainer then
+        autoEquipForTrainer(_G.ActiveTrainer)
+    end
 end)
 end -- HUB PANEL
 
@@ -825,17 +850,8 @@ prioBtn.MouseButton1Click:Connect(function()
     saveSettings()
 end)
 
-mkNH(282,"ANTI-IDLE")
-local idleBtn=Instance.new("TextButton"); idleBtn.Size=UDim2.new(0,iw,0,28); idleBtn.Position=UDim2.new(0,pad,0,296); idleBtn.BorderSizePixel=0; idleBtn.Font=Enum.Font.GothamBold; idleBtn.TextSize=11; idleBtn.Text="⏳ Active"; idleBtn.TextColor3=Color3.fromRGB(255,255,255); idleBtn.BackgroundColor3=Color3.fromRGB(40,160,80); idleBtn.Parent=nukerPanel; Instance.new("UICorner",idleBtn).CornerRadius=UDim.new(0,5)
-idleBtn.MouseButton1Click:Connect(function()
-    antiIdle=not antiIdle
-    TweenService:Create(idleBtn,TweenInfo.new(0.15),{BackgroundColor3=antiIdle and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)}):Play()
-    idleBtn.TextColor3=antiIdle and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110); idleBtn.Text=antiIdle and "⏳ Active" or "⏳ Off"
-    saveSettings()
-end)
-
-mkNH(336,"AUTO-SKIP WEAK")
-local skipBtn=Instance.new("TextButton"); skipBtn.Size=UDim2.new(0,iw,0,28); skipBtn.Position=UDim2.new(0,pad,0,350); skipBtn.BorderSizePixel=0; skipBtn.Font=Enum.Font.GothamBold; skipBtn.TextSize=11; skipBtn.Text="🚫 Active"; skipBtn.TextColor3=Color3.fromRGB(255,255,255); skipBtn.BackgroundColor3=Color3.fromRGB(40,160,80); skipBtn.Parent=nukerPanel; Instance.new("UICorner",skipBtn).CornerRadius=UDim.new(0,5)
+mkNH(282,"AUTO-SKIP WEAK")
+local skipBtn=Instance.new("TextButton"); skipBtn.Size=UDim2.new(0,iw,0,28); skipBtn.Position=UDim2.new(0,pad,0,298); skipBtn.BorderSizePixel=0; skipBtn.Font=Enum.Font.GothamBold; skipBtn.TextSize=11; skipBtn.Text="🚫 Active"; skipBtn.TextColor3=Color3.fromRGB(255,255,255); skipBtn.BackgroundColor3=Color3.fromRGB(40,160,80); skipBtn.Parent=nukerPanel; Instance.new("UICorner",skipBtn).CornerRadius=UDim.new(0,5)
 skipBtn.MouseButton1Click:Connect(function()
     autoSkipWeak=not autoSkipWeak
     TweenService:Create(skipBtn,TweenInfo.new(0.15),{BackgroundColor3=autoSkipWeak and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)}):Play()
@@ -848,14 +864,11 @@ do
     prioBtn.BackgroundColor3=priorityMode and Color3.fromRGB(180,130,20) or Color3.fromRGB(55,55,55)
     prioBtn.TextColor3=priorityMode and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
     prioBtn.Text=priorityMode and "🎯 Priority ON" or "🎯 Priority OFF"
-    idleBtn.BackgroundColor3=antiIdle and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)
-    idleBtn.TextColor3=antiIdle and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
-    idleBtn.Text=antiIdle and "⏳ Active" or "⏳ Off"
     skipBtn.BackgroundColor3=autoSkipWeak and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)
     skipBtn.TextColor3=autoSkipWeak and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
     skipBtn.Text=autoSkipWeak and "🚫 Active" or "🚫 Off"
 end
-startBtn=Instance.new("TextButton"); startBtn.Size=UDim2.new(0,iw,0,34); startBtn.Position=UDim2.new(0,pad,0,392); startBtn.BackgroundColor3=Color3.fromRGB(40,180,80); startBtn.BorderSizePixel=0; startBtn.Font=Enum.Font.GothamBold; startBtn.TextSize=13; startBtn.TextColor3=Color3.fromRGB(255,255,255); startBtn.Text="🟢 Start"; startBtn.Parent=nukerPanel; Instance.new("UICorner",startBtn).CornerRadius=UDim.new(0,6)
+startBtn=Instance.new("TextButton"); startBtn.Size=UDim2.new(0,iw,0,34); startBtn.Position=UDim2.new(0,pad,0,334); startBtn.BackgroundColor3=Color3.fromRGB(40,180,80); startBtn.BorderSizePixel=0; startBtn.Font=Enum.Font.GothamBold; startBtn.TextSize=13; startBtn.TextColor3=Color3.fromRGB(255,255,255); startBtn.Text="🟢 Start"; startBtn.Parent=nukerPanel; Instance.new("UICorner",startBtn).CornerRadius=UDim.new(0,6)
 if nukerRunning then
     _G.nukerRunning = true
     startBtn.Text="🔴 Stop"; TweenService:Create(startBtn,TweenInfo.new(0),{BackgroundColor3=Color3.fromRGB(200,50,50)}):Play()
@@ -1017,6 +1030,224 @@ autoRollBtn.MouseButton1Click:Connect(function()
     if _autoRoll then stopAutoRoll() else startAutoRoll() end
 end)
 end -- WORLD PANEL
+-- BOXES PANEL
+do
+    boxesPanel=Instance.new("Frame")
+    boxesPanel.Size=UDim2.new(1,0,1,-contentY)
+    boxesPanel.Position=UDim2.new(0,0,0,contentY)
+    boxesPanel.BackgroundTransparency=1
+    boxesPanel.Visible=false
+    boxesPanel.Parent=mainFrame
+
+    local function mkBH(y,txt)
+        local l=Instance.new("TextLabel")
+        l.Size=UDim2.new(0,iw,0,14)
+        l.Position=UDim2.new(0,pad,0,y)
+        l.BackgroundTransparency=1
+        l.Font=Enum.Font.GothamBold
+        l.TextSize=10
+        l.TextColor3=Color3.fromRGB(100,100,100)
+        l.TextXAlignment=Enum.TextXAlignment.Left
+        l.Text=txt
+        l.Parent=boxesPanel
+        return l
+    end
+
+    local function mkBL(txt,y)
+        local l=Instance.new("TextLabel")
+        l.Size=UDim2.new(1,-pad*2,0,20)
+        l.Position=UDim2.new(0,pad,0,y)
+        l.BackgroundTransparency=1
+        l.Font=Enum.Font.GothamBold
+        l.TextSize=14
+        l.TextColor3=Color3.fromRGB(255,255,255)
+        l.TextXAlignment=Enum.TextXAlignment.Left
+        l.Text=txt
+        l.Parent=boxesPanel
+        return l
+    end
+
+    local BOX_TIER_ORDER = {"Tier1","Tier2","Tier3","Tier4"}
+    local BOX_TIER_COST = {
+        Tier1 = 1e12,
+        Tier2 = 1e15,
+        Tier3 = 1e18,
+        Tier4 = 1e21,
+    }
+
+    mkBH(6, "AUTO BOX OPENER")
+
+    local boxBtn=Instance.new("TextButton")
+    boxBtn.Size=UDim2.new(0,iw,0,28)
+    boxBtn.Position=UDim2.new(0,pad,0,22)
+    boxBtn.BorderSizePixel=0
+    boxBtn.Font=Enum.Font.GothamBold
+    boxBtn.TextSize=13
+    boxBtn.Text= _G.AutoBoxEnabled and "Auto Box Opener: ON" or "Auto Box Opener: OFF"
+    boxBtn.BackgroundColor3= _G.AutoBoxEnabled and Color3.fromRGB(60,160,80) or Color3.fromRGB(160,60,60)
+    boxBtn.TextColor3=Color3.fromRGB(255,255,255)
+    boxBtn.Parent=boxesPanel
+    Instance.new("UICorner",boxBtn).CornerRadius=UDim.new(0,5)
+    boxBtn.MouseButton1Click:Connect(function()
+        _G.AutoBoxEnabled = not _G.AutoBoxEnabled
+        boxBtn.Text = _G.AutoBoxEnabled and "Auto Box Opener: ON" or "Auto Box Opener: OFF"
+        boxBtn.BackgroundColor3 = _G.AutoBoxEnabled and Color3.fromRGB(60,160,80) or Color3.fromRGB(160,60,60)
+    end)
+
+    mkBH(60, "TIERS TO OPEN")
+
+    local tierBtns = {}
+    for i, tier in ipairs(BOX_TIER_ORDER) do
+        local enabled = _G.AutoBoxTiers and _G.AutoBoxTiers[tier]
+        if enabled == nil then enabled = true end
+        if not _G.AutoBoxTiers then _G.AutoBoxTiers = {} end
+        _G.AutoBoxTiers[tier] = enabled
+
+        local bw=(iw-30)/4
+        local tb=Instance.new("TextButton")
+        tb.Size=UDim2.new(0,bw,0,26)
+        tb.Position=UDim2.new(0,pad+(i-1)*(bw+10),0,76)
+        tb.BorderSizePixel=0
+        tb.Font=Enum.Font.GothamBold
+        tb.TextSize=12
+        tb.Text=tier
+        tb.BackgroundColor3= enabled and Color3.fromRGB(60,160,80) or Color3.fromRGB(55,55,55)
+        tb.TextColor3= enabled and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
+        tb.Parent=boxesPanel
+        Instance.new("UICorner",tb).CornerRadius=UDim.new(0,5)
+        tb.MouseButton1Click:Connect(function()
+            _G.AutoBoxTiers[tier] = not _G.AutoBoxTiers[tier]
+            local on=_G.AutoBoxTiers[tier]
+            tb.BackgroundColor3 = on and Color3.fromRGB(60,160,80) or Color3.fromRGB(55,55,55)
+            tb.TextColor3 = on and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
+        end)
+        tierBtns[tier]=tb
+    end
+
+    mkBH(114, "OPEN INTERVAL")
+
+    local speedLbl=Instance.new("TextLabel")
+    speedLbl.Size=UDim2.new(0,50,0,16)
+    speedLbl.Position=UDim2.new(1,-pad-50,0,112)
+    speedLbl.BackgroundTransparency=1
+    speedLbl.Font=Enum.Font.GothamBold
+    speedLbl.TextSize=11
+    speedLbl.TextColor3=Color3.fromRGB(255,255,255)
+    speedLbl.TextXAlignment=Enum.TextXAlignment.Right
+    if not _G.AutoBoxInterval then _G.AutoBoxInterval = 0.05 end
+    speedLbl.Text=string.format("%.2fs", _G.AutoBoxInterval)
+    speedLbl.Parent=boxesPanel
+
+    local sliderBg=Instance.new("Frame")
+    sliderBg.Size=UDim2.new(1,-pad*2,0,6)
+    sliderBg.Position=UDim2.new(0,pad,0,134)
+    sliderBg.BackgroundColor3=Color3.fromRGB(55,55,55)
+    sliderBg.BorderSizePixel=0
+    sliderBg.Parent=boxesPanel
+    Instance.new("UICorner",sliderBg).CornerRadius=UDim.new(1,0)
+
+    local minI,maxI=0.05,5
+    local function pctFromInterval(v) return math.clamp((v-minI)/(maxI-minI),0,1) end
+
+    local sliderFill=Instance.new("Frame")
+    sliderFill.Size=UDim2.new(pctFromInterval(_G.AutoBoxInterval),0,1,0)
+    sliderFill.BackgroundColor3=Color3.fromRGB(120,90,200)
+    sliderFill.BorderSizePixel=0
+    sliderFill.Parent=sliderBg
+    Instance.new("UICorner",sliderFill).CornerRadius=UDim.new(1,0)
+
+    local sliderBtn=Instance.new("TextButton")
+    sliderBtn.Size=UDim2.new(0,14,0,14)
+    sliderBtn.AnchorPoint=Vector2.new(0.5,0.5)
+    sliderBtn.Position=UDim2.new(pctFromInterval(_G.AutoBoxInterval),0,0.5,0)
+    sliderBtn.BackgroundColor3=Color3.fromRGB(200,180,255)
+    sliderBtn.BorderSizePixel=0
+    sliderBtn.Text=""
+    sliderBtn.Parent=sliderBg
+    Instance.new("UICorner",sliderBtn).CornerRadius=UDim.new(1,0)
+
+    local draggingSlider=false
+    sliderBtn.MouseButton1Down:Connect(function() draggingSlider=true end)
+    game:GetService("UserInputService").InputEnded:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 then draggingSlider=false end
+    end)
+    game:GetService("UserInputService").InputChanged:Connect(function(input)
+        if draggingSlider and input.UserInputType==Enum.UserInputType.MouseMovement then
+            local rel=(input.Position.X - sliderBg.AbsolutePosition.X)/sliderBg.AbsoluteSize.X
+            rel=math.clamp(rel,0,1)
+            _G.AutoBoxInterval = minI + rel*(maxI-minI)
+            sliderFill.Size=UDim2.new(rel,0,1,0)
+            sliderBtn.Position=UDim2.new(rel,0,0.5,0)
+            speedLbl.Text=string.format("%.2fs", _G.AutoBoxInterval)
+        end
+    end)
+
+    mkBH(154, "STATUS")
+    local tokensLbl=mkBL("Tokens: --", 170)
+    local targetLbl=mkBL("Targeting: --", 192)
+    local lastDropLbl=mkBL("Last drop: --", 214)
+
+    task.spawn(function()
+        while true do
+            if _G.AutoBoxEnabled then
+                local tokens = LP:GetAttribute("Tokens") or 0
+                tokensLbl.Text = "Tokens: "..tostring(tokens)
+
+                local target=nil
+                for i=#BOX_TIER_ORDER,1,-1 do
+                    local tier=BOX_TIER_ORDER[i]
+                    if _G.AutoBoxTiers[tier] and tokens >= BOX_TIER_COST[tier] then
+                        target=tier
+                        break
+                    end
+                end
+
+                if target then
+                    targetLbl.Text = "Targeting: "..target
+                    local args = {target}
+                    game:GetService("ReplicatedStorage").RemoteEvents.OpenMysteryBox:FireServer(unpack(args))
+                else
+                    targetLbl.Text = "Targeting: none affordable"
+                end
+            end
+            task.wait(_G.AutoBoxInterval or 0.05)
+        end
+    end)
+
+
+    local _pg = game:GetService("Players").LocalPlayer.PlayerGui
+    local function suppressBoxPopup(gui)
+        gui.Enabled = false
+        task.defer(function() if gui and gui.Parent then gui:Destroy() end end)
+    end
+    for _, c in ipairs(_pg:GetChildren()) do
+        if c.Name == "MysteryBoxResultGui" then suppressBoxPopup(c) end
+    end
+    _pg.ChildAdded:Connect(function(child)
+        if child.Name == "MysteryBoxResultGui" then
+            suppressBoxPopup(child)
+        end
+    end)
+    task.spawn(function()
+        while task.wait(0.1) do
+            for _, child in ipairs(_pg:GetChildren()) do
+                if child.Name == "MysteryBoxResultGui" then
+                    suppressBoxPopup(child)
+                end
+            end
+        end
+    end)
+
+
+
+
+    game:GetService("ReplicatedStorage").RemoteEvents.MysteryBoxResult.OnClientEvent:Connect(function(result)
+        if result and result.name then
+            lastDropLbl.Text = "Last drop: "..tostring(result.name).." ("..tostring(result.rarity)..")"
+        end
+    end)
+end -- BOXES PANEL
+
 
 -- SETTINGS PANEL
 do
@@ -1031,7 +1262,7 @@ function mkSL(y,h,txt,col,bold)
     l.TextXAlignment=Enum.TextXAlignment.Left; l.Text=txt; l.Parent=settingsPanel; return l
 end
 function mkSBtn(y,h,txt,col)
-    local b=Instance.new("TextButton"); b.Size=UDim2.new(0,iw,0,h); b.Position=UDim2.new(0,pad,0,y)
+    local b=Instance.new("TextButton"); b.Size=UDim2.new(0,iw,0,h); b.Position=UDim2.new(0,pad,0,y); b.Text=txt or "Button"
     b.BorderSizePixel=0; b.Font=Enum.Font.GothamBold; b.TextSize=11
     b.TextColor3=Color3.fromRGB(255,255,255); b.BackgroundColor3=col or Color3.fromRGB(55,55,55)
     b.Parent=settingsPanel; Instance.new("UICorner",b).CornerRadius=UDim.new(0,7); return b
@@ -1059,8 +1290,9 @@ local spoofStatusLbl = mkSL(26, 18, "👤 Status: off", Color3.fromRGB(150,150,1
 local fakeNameLbl = mkSL(46, 18, "🎭 Fake name: ---", Color3.fromRGB(100,210,255))
 local fakeSquadLbl = mkSL(64, 18, "🛡️ Fake squad: ---", Color3.fromRGB(100,255,180))
 
-local spoofToggle = mkSBtn(88, 30, "👤 Spoofer OFF", Color3.fromRGB(55,55,55))
-local rerollBtn = mkSBtn(124, 30, "🎲 Reroll Names", Color3.fromRGB(50,80,130))
+local spoofToggle = mkSBtn(88, 30, "Spoofer OFF", Color3.fromRGB(55,55,55))
+local rerollBtn = mkSBtn(124, 30, "Reroll Names", Color3.fromRGB(50,80,130))
+rerollBtn.Text = "Reroll Names"
 
 local spoofRefs = nil
 
@@ -1145,12 +1377,12 @@ local function revertSpoof(refs)
 end
 local function refreshSpoofUI()
     if spoofEnabled then
-        spoofToggle.Text = "👤 Spoofer ON"
+        spoofToggle.Text = "Spoofer ON"
         TweenService:Create(spoofToggle,TweenInfo.new(0.15),{BackgroundColor3=Color3.fromRGB(40,160,80)}):Play()
         spoofStatusLbl.Text = "👤 Status: active"
         spoofStatusLbl.TextColor3 = Color3.fromRGB(90,210,90)
     else
-        spoofToggle.Text = "👤 Spoofer OFF"
+        spoofToggle.Text = "Spoofer OFF"
         TweenService:Create(spoofToggle,TweenInfo.new(0.15),{BackgroundColor3=Color3.fromRGB(55,55,55)}):Play()
         spoofStatusLbl.Text = "👤 Status: off"
         spoofStatusLbl.TextColor3 = Color3.fromRGB(150,150,150)
@@ -1220,13 +1452,24 @@ rerollBtn.MouseButton1Click:Connect(function()
 end)
 
 refreshSpoofUI()
+
+local antiIdleHeader = mkSL(180, 16, "ANTI-IDLE", Color3.fromRGB(150,200,255), true)
+idleBtn = mkSBtn(200, 28, antiIdle and "Active" or "Off", antiIdle and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55))
+idleBtn.TextColor3 = antiIdle and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
+idleBtn.MouseButton1Click:Connect(function()
+    antiIdle = not antiIdle
+    TweenService:Create(idleBtn,TweenInfo.new(0.15),{BackgroundColor3=antiIdle and Color3.fromRGB(40,160,80) or Color3.fromRGB(55,55,55)}):Play()
+    idleBtn.TextColor3 = antiIdle and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
+    idleBtn.Text = antiIdle and "Active" or "Off"
+    saveSettings()
+end)
 end -- SETTINGS PANEL
 
 -- TAB SWITCHING
 do
     function switchTab(tab)
-        hubPanel.Visible=(tab=="hub"); nukerPanel.Visible=(tab=="nuker"); settingsPanel.Visible=(tab=="settings"); worldPanel.Visible=(tab=="world")
-        local tabs = {hub=hubTabBtn, nuker=nukerTabBtn, settings=settingsTabBtn, world=worldTabBtn}
+        hubPanel.Visible=(tab=="hub"); nukerPanel.Visible=(tab=="nuker"); settingsPanel.Visible=(tab=="settings"); worldPanel.Visible=(tab=="world"); boxesPanel.Visible=(tab=="boxes")
+        local tabs = {hub=hubTabBtn, nuker=nukerTabBtn, settings=settingsTabBtn, world=worldTabBtn, boxes=boxesTabBtn}
         for k,b in pairs(tabs) do
             local on=(k==tab)
             TweenService:Create(b,TweenInfo.new(0.15),{BackgroundColor3=on and Color3.fromRGB(80,55,130) or Color3.fromRGB(35,35,45)}):Play()
@@ -1237,6 +1480,7 @@ do
     nukerTabBtn.MouseButton1Click:Connect(function() switchTab("nuker") end)
     settingsTabBtn.MouseButton1Click:Connect(function() switchTab("settings") end)
     worldTabBtn.MouseButton1Click:Connect(function() switchTab("world") end)
+    boxesTabBtn.MouseButton1Click:Connect(function() switchTab("boxes") end)
     switchTab("hub")
 end
 
