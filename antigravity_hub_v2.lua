@@ -224,6 +224,11 @@ end
 function lS(s, key)
     return s:match('"' .. key .. '":"([^"]+)"')
 end
+function lN(s, key, def)
+    local v = s:match('"' .. key .. '":([%d%.eE%+%-]+)')
+    if v then return tonumber(v) end
+    return def
+end
 local _sv = nil
 local _svOk, _svErr = pcall(function() if readfile then local r = readfile(SETTINGS_FILE) if r and #r > 2 then _sv = r end end end)
 if not _svOk then warn('[Settings] Load error: ' .. tostring(_svErr)) end
@@ -254,11 +259,20 @@ if _sv then
     _G.JFEnabled  = lB(_sv, "jfEnabled",     false)
     fsAutoClick   = lB(_sv, "fsAutoClick",   false)
 end
+local _svStr = _sv or ""
+_G.AutoBoxInterval = lN(_svStr, "autoBoxInterval", 0.05)
+_G.AutoRollEnabled = lB(_svStr, "autoRoll", false)
+_G.AutoBoxTiers = {
+    Tier1 = lB(_svStr, "boxTier1", true),
+    Tier2 = lB(_svStr, "boxTier2", true),
+    Tier3 = lB(_svStr, "boxTier3", true),
+    Tier4 = lB(_svStr, "boxTier4", true),
+}
 local function saveSettings()
     local at = _G.ActiveTrainer and ('"' .. _G.ActiveTrainer .. '"') or "null"
     local et = enabledTargets
     local json = string.format(
-        '{"activeTrainer":%s,"autoRespawn":%s,"arTeleportBack":%s,"autoQuest":%s,"autoEquip":%s,"autoBox":%s,"teleportMode":%s,"antiIdle":%s,"nukerRunning":%s,"autoSkipWeak":%s,"priorityMode":%s,"jfEnabled":%s,"fsAutoClick":%s,"Noob":%s,"Thug":%s,"Mafia":%s,"WereWolf":%s,"Robot":%s,"Sath":%s,"Phantom":%s}',
+        '{"activeTrainer":%s,"autoRespawn":%s,"arTeleportBack":%s,"autoQuest":%s,"autoEquip":%s,"autoBox":%s,"teleportMode":%s,"antiIdle":%s,"nukerRunning":%s,"autoSkipWeak":%s,"priorityMode":%s,"jfEnabled":%s,"fsAutoClick":%s,"Noob":%s,"Thug":%s,"Mafia":%s,"WereWolf":%s,"Robot":%s,"Sath":%s,"Phantom":%s,"autoBoxInterval":%s,"autoRoll":%s,"boxTier1":%s,"boxTier2":%s,"boxTier3":%s,"boxTier4":%s}',
         at,
         tostring(_G.AutoRespawnEnabled),
         tostring(_G.ARTeleportBack),
@@ -278,7 +292,13 @@ local function saveSettings()
         tostring(manualTargets.WereWolf),
         tostring(manualTargets.Robot),
         tostring(manualTargets.Sath),
-        tostring(manualTargets.Phantom)
+        tostring(manualTargets.Phantom),
+        tostring(_G.AutoBoxInterval or 0.05),
+        tostring(_G.AutoRollEnabled == true),
+        tostring(_G.AutoBoxTiers and _G.AutoBoxTiers.Tier1 == true),
+        tostring(_G.AutoBoxTiers and _G.AutoBoxTiers.Tier2 == true),
+        tostring(_G.AutoBoxTiers and _G.AutoBoxTiers.Tier3 == true),
+        tostring(_G.AutoBoxTiers and _G.AutoBoxTiers.Tier4 == true)
     )
     local ok, err = pcall(function() if writefile then writefile(SETTINGS_FILE, json) end end)
     if not ok then warn("[Settings] Save failed: " .. tostring(err)) end
@@ -391,7 +411,7 @@ track(workspace.DescendantAdded:Connect(function(child)
     if not (child:IsA("Model") and trackable[child.Name]) then return end
     if registeredModels[child] then return end
     task.spawn(function()
-        for _=1,5 do task.wait(1) if not child.Parent then return end if getRootPart(child) and child:FindFirstChildOfClass("Humanoid") then tryRegisterModel(child) return end end
+        for _=1,5 do task.wait(0.25) if not child.Parent then return end if getRootPart(child) and child:FindFirstChildOfClass("Humanoid") then tryRegisterModel(child) return end end
         local rp=child:FindFirstChild("HumanoidRootPart") or child:FindFirstChild("Torso")
         local hum=child:FindFirstChildOfClass("Humanoid") or child:WaitForChild("Humanoid",3)
         if rp and hum then tryRegisterModel(child) end
@@ -435,9 +455,9 @@ local function hookCharacter(char)
             for i=1,20 do
                 pcall(function()
                     Camera.CameraType = Enum.CameraType.Custom
-                    game:GetService("TweenService"):Create(Camera, TweenInfo.new(0), {CFrame=Camera.CFrame}):Play()
+                    TweenService:Create(Camera, TweenInfo.new(0), {CFrame=Camera.CFrame}):Play()
                     LP.PlayerGui.IntroGui.Enabled = false
-                    game:GetService("Lighting").Blur.Size = 0
+                    Lighting.Blur.Size = 0
                 end)
                 task.wait(0.05)
             end
@@ -485,10 +505,25 @@ pcall(function() sg.Parent=CG end); if not sg.Parent then sg.Parent=PG end
 local frameW=340; local pad=10; local iw=frameW-pad*2
 
 local mainFrame=Instance.new("Frame")
-mainFrame.Size=UDim2.new(0,frameW,0,618); mainFrame.Position=UDim2.new(0.05,0,0.05,0)
+mainFrame.Size=UDim2.new(0,frameW,0,618)
+mainFrame.AnchorPoint=Vector2.new(0.5,0.5)
+mainFrame.Position=UDim2.new(0.5,0,0.5,0)
 mainFrame.BackgroundColor3=Color3.fromRGB(12,12,18); mainFrame.BorderSizePixel=0
 mainFrame.Active=true; mainFrame.Draggable=false; mainFrame.Parent=sg
 Instance.new("UICorner",mainFrame).CornerRadius=UDim.new(0,12)
+
+local hubUIScale=Instance.new("UIScale")
+hubUIScale.Parent=mainFrame
+local function refreshHubScale()
+    local vp=workspace.CurrentCamera.ViewportSize
+    local scaleX=vp.X/1280
+    local scaleY=vp.Y/720
+    local s=math.min(scaleX,scaleY)
+    s=math.clamp(s,0.55,1)
+    hubUIScale.Scale=s
+end
+refreshHubScale()
+workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(refreshHubScale)
 local mainStroke=Instance.new("UIStroke",mainFrame); mainStroke.Color=Color3.fromRGB(100,75,150); mainStroke.Thickness=1.5
 
 local titleBar=Instance.new("Frame")
@@ -703,13 +738,13 @@ local function maybeReEquip()
     autoEquipForTrainer(key)
 end
 
-game:GetService("ReplicatedStorage").RemoteEvents.LoadInventory.OnClientEvent:Connect(function(counts, equipped, meta)
+RemoteEvents.LoadInventory.OnClientEvent:Connect(function(counts, equipped, meta)
     _invCounts   = counts   or {}
     _invEquipped = equipped or {}
     _invMeta     = meta     or {}
     maybeReEquip()
 end)
-game:GetService("ReplicatedStorage").RemoteEvents.EquipItem:FireServer("__REQUEST_INVENTORY__")
+RemoteEvents.EquipItem:FireServer("__REQUEST_INVENTORY__")
 
 local function setTrainer(key)
     if key == "JF" then
@@ -988,6 +1023,7 @@ local _rollConn = nil
 
 local function stopAutoRoll()
     _autoRoll = false
+    _G.AutoRollEnabled = false
     if _rollConn then _rollConn:Disconnect(); _rollConn = nil end
     autoRollBtn.Text = "🎲 Auto Roll: Off"
     TweenService:Create(autoRollBtn,TweenInfo.new(0.15),{BackgroundColor3=Color3.fromRGB(55,55,55)}):Play()
@@ -996,6 +1032,7 @@ end
 
 local function startAutoRoll()
     _autoRoll = true
+    _G.AutoRollEnabled = true
     autoRollBtn.Text = "🎲 Auto Roll: ON"
     TweenService:Create(autoRollBtn,TweenInfo.new(0.15),{BackgroundColor3=Color3.fromRGB(40,120,60)}):Play()
     autoRollBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1028,7 +1065,12 @@ end
 
 autoRollBtn.MouseButton1Click:Connect(function()
     if _autoRoll then stopAutoRoll() else startAutoRoll() end
+    saveSettings()
 end)
+
+if _G.AutoRollEnabled then
+    startAutoRoll()
+end
 end -- WORLD PANEL
 -- BOXES PANEL
 do
@@ -1092,6 +1134,7 @@ do
         _G.AutoBoxEnabled = not _G.AutoBoxEnabled
         boxBtn.Text = _G.AutoBoxEnabled and "Auto Box Opener: ON" or "Auto Box Opener: OFF"
         boxBtn.BackgroundColor3 = _G.AutoBoxEnabled and Color3.fromRGB(60,160,80) or Color3.fromRGB(160,60,60)
+        saveSettings()
     end)
 
     mkBH(60, "TIERS TO OPEN")
@@ -1120,6 +1163,7 @@ do
             local on=_G.AutoBoxTiers[tier]
             tb.BackgroundColor3 = on and Color3.fromRGB(60,160,80) or Color3.fromRGB(55,55,55)
             tb.TextColor3 = on and Color3.fromRGB(255,255,255) or Color3.fromRGB(110,110,110)
+            saveSettings()
         end)
         tierBtns[tier]=tb
     end
@@ -1143,6 +1187,7 @@ do
     sliderBg.Position=UDim2.new(0,pad,0,134)
     sliderBg.BackgroundColor3=Color3.fromRGB(55,55,55)
     sliderBg.BorderSizePixel=0
+    sliderBg.Active=true
     sliderBg.Parent=boxesPanel
     Instance.new("UICorner",sliderBg).CornerRadius=UDim.new(1,0)
 
@@ -1166,19 +1211,35 @@ do
     sliderBtn.Parent=sliderBg
     Instance.new("UICorner",sliderBtn).CornerRadius=UDim.new(1,0)
 
-    local draggingSlider=false
+    local UIS = game:GetService("UserInputService")
+    local function updateSliderFromX(x)
+        local rel=(x - sliderBg.AbsolutePosition.X)/sliderBg.AbsoluteSize.X
+        rel=math.clamp(rel,0,1)
+        _G.AutoBoxInterval = minI + rel*(maxI-minI)
+        sliderFill.Size=UDim2.new(rel,0,1,0)
+        sliderBtn.Position=UDim2.new(rel,0,0.5,0)
+        speedLbl.Text=string.format("%.2fs", _G.AutoBoxInterval)
+    end
     sliderBtn.MouseButton1Down:Connect(function() draggingSlider=true end)
-    game:GetService("UserInputService").InputEnded:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseButton1 then draggingSlider=false end
+    sliderBtn.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.Touch then draggingSlider=true end
     end)
-    game:GetService("UserInputService").InputChanged:Connect(function(input)
-        if draggingSlider and input.UserInputType==Enum.UserInputType.MouseMovement then
-            local rel=(input.Position.X - sliderBg.AbsolutePosition.X)/sliderBg.AbsoluteSize.X
-            rel=math.clamp(rel,0,1)
-            _G.AutoBoxInterval = minI + rel*(maxI-minI)
-            sliderFill.Size=UDim2.new(rel,0,1,0)
-            sliderBtn.Position=UDim2.new(rel,0,0.5,0)
-            speedLbl.Text=string.format("%.2fs", _G.AutoBoxInterval)
+    sliderBg.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.Touch then
+            draggingSlider=true
+            updateSliderFromX(input.Position.X)
+        end
+    end)
+    UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            if draggingSlider then saveSettings() end
+            draggingSlider=false
+        end
+    end)
+    UIS.InputChanged:Connect(function(input)
+        if not draggingSlider then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            updateSliderFromX(input.Position.X)
         end
     end)
 
@@ -1188,34 +1249,29 @@ do
     local lastDropLbl=mkBL("Last drop: --", 214)
 
     task.spawn(function()
-        while true do
-            if _G.AutoBoxEnabled then
-                local tokens = LP:GetAttribute("Tokens") or 0
-                tokensLbl.Text = "Tokens: "..tostring(tokens)
-
-                local target=nil
-                for i=#BOX_TIER_ORDER,1,-1 do
-                    local tier=BOX_TIER_ORDER[i]
-                    if _G.AutoBoxTiers[tier] and tokens >= BOX_TIER_COST[tier] then
-                        target=tier
-                        break
-                    end
+        while hubAlive do
+            if not _G.AutoBoxEnabled then task.wait(0.5); continue end
+            local tokens = LP:GetAttribute("Tokens") or 0
+            tokensLbl.Text = "Tokens: "..tostring(tokens)
+            local target = nil
+            for i=#BOX_TIER_ORDER,1,-1 do
+                local tier = BOX_TIER_ORDER[i]
+                if _G.AutoBoxTiers[tier] and tokens >= BOX_TIER_COST[tier] then
+                    target = tier; break
                 end
-
-                if target then
-                    targetLbl.Text = "Targeting: "..target
-                    local args = {target}
-                    game:GetService("ReplicatedStorage").RemoteEvents.OpenMysteryBox:FireServer(unpack(args))
-                else
-                    targetLbl.Text = "Targeting: none affordable"
-                end
+            end
+            if target then
+                targetLbl.Text = "Targeting: "..target
+                RemoteEvents.OpenMysteryBox:FireServer(target)
+            else
+                targetLbl.Text = "Targeting: none affordable"
             end
             task.wait(_G.AutoBoxInterval or 0.05)
         end
     end)
 
 
-    local _pg = game:GetService("Players").LocalPlayer.PlayerGui
+    local _pg = LP.PlayerGui
     local function suppressBoxPopup(gui)
         gui.Enabled = false
         task.defer(function() if gui and gui.Parent then gui:Destroy() end end)
@@ -1228,20 +1284,20 @@ do
             suppressBoxPopup(child)
         end
     end)
-    task.spawn(function()
-        while task.wait(0.1) do
-            for _, child in ipairs(_pg:GetChildren()) do
-                if child.Name == "MysteryBoxResultGui" then
-                    suppressBoxPopup(child)
-                end
-            end
-        end
-    end)
 
 
 
 
-    game:GetService("ReplicatedStorage").RemoteEvents.MysteryBoxResult.OnClientEvent:Connect(function(result)
+
+
+
+
+
+
+
+
+
+    RemoteEvents.MysteryBoxResult.OnClientEvent:Connect(function(result)
         if result and result.name then
             lastDropLbl.Text = "Last drop: "..tostring(result.name).." ("..tostring(result.rarity)..")"
         end
@@ -1269,16 +1325,16 @@ function mkSBtn(y,h,txt,col)
 end
 
 local chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+
+local charsLen = #chars
 local function randName(minL, maxL)
     local len = math.random(minL, maxL)
-    local s = ""
+    local t = table.create(len)
     for i = 1, len do
-        local idx = math.random(1, #chars)
-        s = s .. chars:sub(idx, idx)
+        local idx = math.random(1, charsLen); t[i] = chars:sub(idx, idx)
     end
-    return s
+    return table.concat(t)
 end
-
 local spoofEnabled = false
 local fakeName = ""
 local fakeSquad = ""
@@ -1515,8 +1571,8 @@ task.spawn(function()
         local currentType=alive[1].name
         priorityLabel.Text=string.format("🎯 Targeting: %s (%.0e tk)",currentType,tokenValues[currentType] or 0)
         local radius=getSphereRadius(); sphereLabel.Text=string.format("🔮 Sphere: %.1f  FS: %.2e",radius,LP:GetAttribute("FistStrength") or 0)
-        local ok,_=pcall(findBestLine,alive,radius); if not ok then task.wait(0.5); continue end
-        local origin,dir,maxDist,centroid,hits=findBestLine(alive,radius); if not origin then task.wait(0.5); continue end
+        local ok,origin,dir,maxDist,centroid,hits=pcall(findBestLine,alive,radius); if not ok or not origin then task.wait(0.5); continue end
+
         errorLabel.Text=""
         statusLabel.Text=string.format("💥 Hitting %d / %d",hits,#alive); statusLabel.TextColor3=Color3.fromRGB(255,120,50)
         mathLabel.Text=string.format("📏 Max dev: %.2f / %.1f  %s",maxDist,radius,hits==#alive and "OK" or "!"); mathLabel.TextColor3=hits==#alive and Color3.fromRGB(100,220,100) or Color3.fromRGB(255,160,50)
