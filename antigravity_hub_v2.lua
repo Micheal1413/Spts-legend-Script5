@@ -1206,12 +1206,20 @@ local function startSoulCollect()
     local startSouls = LP:GetAttribute("Souls") or 0
     soulInfoLbl.Text = "👻 Souls: " .. fmtNum(startSouls)
 
+    local soulHomeCFrame = nil
+    do
+        local startChar = LP.Character
+        local startRP = startChar and startChar:FindFirstChild("HumanoidRootPart")
+        if startRP then soulHomeCFrame = startRP.CFrame end
+    end
+
     if _soulConn then _soulConn:Disconnect() end
     _soulConn = track(LP:GetAttributeChangedSignal("Souls"):Connect(function()
         local cur = LP:GetAttribute("Souls") or 0
         soulInfoLbl.Text = "👻 Souls: " .. fmtNum(cur)
     end))
 
+    local wasChasing = false
     task.spawn(function()
         while _G.SoulCollectEnabled and hubAlive do
             local char = LP.Character
@@ -1227,6 +1235,13 @@ local function startSoulCollect()
                 end
 
                 if #active > 0 then
+                    if not wasChasing then
+                        -- rising edge: starting a fresh chase -- remember where we
+                        -- were standing right now, so the post-chase snap-back goes
+                        -- here instead of the original Soul Collect toggle-on spot.
+                        soulHomeCFrame = shrp.CFrame
+                    end
+                    wasChasing = true
                     local nearest, nearestDist = nil, math.huge
                     for _, orb in ipairs(active) do
                         local d = (orb.Position - shrp.Position).Magnitude
@@ -1238,6 +1253,15 @@ local function startSoulCollect()
                         shrp.CFrame = CFrame.new(nearest.Position)
                         task.wait(_G.SoulCollectInterval or 1)
                     end
+                else
+                    -- falling edge: we WERE chasing an orb last tick, and now
+                    -- there are none left active -- teleport back to the start
+                    -- spot exactly ONCE, then leave the character alone so it
+                    -- never fights manual movement.
+                    if wasChasing and soulHomeCFrame then
+                        shrp.CFrame = soulHomeCFrame
+                    end
+                    wasChasing = false
                 end
             end
 
