@@ -260,7 +260,7 @@ if _sv then
     fsAutoClick   = lB(_sv, "fsAutoClick",   false)
 end
 local _svStr = _sv or ""
-_G.AutoBoxInterval = lN(_svStr, "autoBoxInterval", 0.05)
+_G.AutoBoxInterval = lN(_svStr, "autoBoxInterval", 0.01)
 _G.AutoRollEnabled = lB(_svStr, "autoRoll", false)
 _G.AutoBoxTiers = {
     Tier1 = lB(_svStr, "boxTier1", true),
@@ -295,7 +295,7 @@ local function saveSettings()
         tostring(manualTargets.Robot),
         tostring(manualTargets.Sath),
         tostring(manualTargets.Phantom),
-        tostring(_G.AutoBoxInterval or 0.05),
+        tostring(_G.AutoBoxInterval or 0.01),
         tostring(_G.AutoRollEnabled == true),
         tostring(_G.AutoBoxTiers and _G.AutoBoxTiers.Tier1 == true),
         tostring(_G.AutoBoxTiers and _G.AutoBoxTiers.Tier2 == true),
@@ -1327,7 +1327,7 @@ do
     speedLbl.TextSize=11
     speedLbl.TextColor3=Color3.fromRGB(255,255,255)
     speedLbl.TextXAlignment=Enum.TextXAlignment.Right
-    if not _G.AutoBoxInterval then _G.AutoBoxInterval = 0.05 end
+    if not _G.AutoBoxInterval then _G.AutoBoxInterval = 0.01 end
     speedLbl.Text=string.format("%.2fs", _G.AutoBoxInterval)
     speedLbl.Parent=boxesPanel
 
@@ -1340,7 +1340,7 @@ do
     sliderBg.Parent=boxesPanel
     Instance.new("UICorner",sliderBg).CornerRadius=UDim.new(1,0)
 
-    local minI,maxI=0.05,5
+    local minI,maxI=0.01,5
     local function pctFromInterval(v) return math.clamp((v-minI)/(maxI-minI),0,1) end
 
     local sliderFill=Instance.new("Frame")
@@ -1415,7 +1415,7 @@ do
             else
                 targetLbl.Text = "Targeting: none affordable"
             end
-            task.wait(_G.AutoBoxInterval or 0.05)
+            task.wait(_G.AutoBoxInterval or 0.01)
         end
     end)
 
