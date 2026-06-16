@@ -260,7 +260,7 @@ if _sv then
     fsAutoClick   = lB(_sv, "fsAutoClick",   false)
 end
 local _svStr = _sv or ""
-_G.AutoBoxInterval = lN(_svStr, "autoBoxInterval", 0.01)
+_G.AutoBoxInterval = lN(_svStr, "autoBoxInterval", 0.001)
 _G.AutoRollEnabled = lB(_svStr, "autoRoll", false)
 _G.AutoBoxTiers = {
     Tier1 = lB(_svStr, "boxTier1", true),
@@ -295,7 +295,7 @@ local function saveSettings()
         tostring(manualTargets.Robot),
         tostring(manualTargets.Sath),
         tostring(manualTargets.Phantom),
-        tostring(_G.AutoBoxInterval or 0.01),
+        tostring(_G.AutoBoxInterval or 0.001),
         tostring(_G.AutoRollEnabled == true),
         tostring(_G.AutoBoxTiers and _G.AutoBoxTiers.Tier1 == true),
         tostring(_G.AutoBoxTiers and _G.AutoBoxTiers.Tier2 == true),
@@ -1175,9 +1175,23 @@ do
     mergeSpeedLbl.TextSize=10
     mergeSpeedLbl.TextColor3=Color3.fromRGB(200,180,255)
     mergeSpeedLbl.TextXAlignment=Enum.TextXAlignment.Right
-    local _initLagWarn = _G.AutoMergerInterval < 0.7 and " ⚠ lag" or ""
-    mergeSpeedLbl.Text=string.format("%.2fs",_G.AutoMergerInterval).._initLagWarn
+    mergeSpeedLbl.Text=string.format("%.3fs",_G.AutoMergerInterval)
+    mergeSpeedLbl.Visible=false
     mergeSpeedLbl.Parent=boxesPanel
+    local mergeSpeedBox=Instance.new("TextBox")
+    mergeSpeedBox.Size=UDim2.new(0,80,0,18)
+    mergeSpeedBox.Position=UDim2.new(1,-pad-80,0,87)
+    mergeSpeedBox.BackgroundColor3=Color3.fromRGB(35,35,45)
+    mergeSpeedBox.BorderSizePixel=0
+    mergeSpeedBox.Font=Enum.Font.GothamBold
+    mergeSpeedBox.TextSize=10
+    mergeSpeedBox.TextColor3=Color3.fromRGB(200,180,255)
+    mergeSpeedBox.PlaceholderText="e.g. 0.3"
+    mergeSpeedBox.PlaceholderColor3=Color3.fromRGB(90,90,90)
+    mergeSpeedBox.Text=string.format("%.3f",_G.AutoMergerInterval)
+    mergeSpeedBox.ClearTextOnFocus=false
+    mergeSpeedBox.Parent=boxesPanel
+    Instance.new("UICorner",mergeSpeedBox).CornerRadius=UDim.new(0,5)
 
     local mSliderBg=Instance.new("Frame")
     mSliderBg.Size=UDim2.new(1,-pad*2,0,5)
@@ -1215,10 +1229,8 @@ do
         _G.AutoMergerInterval=mMinI+rel*(mMaxI-mMinI)
         mSliderFill.Size=UDim2.new(rel,0,1,0)
         mSliderBtn.Position=UDim2.new(rel,0,0.5,0)
-        local lagWarn = _G.AutoMergerInterval < 0.7 and " ⚠ lag" or ""
-        local _initLagWarn = _G.AutoMergerInterval < 0.7 and " ⚠ lag" or ""
-    mergeSpeedLbl.Text=string.format("%.2fs",_G.AutoMergerInterval).._initLagWarn..lagWarn
-    end
+        mergeSpeedBox.Text=string.format("%.3f",_G.AutoMergerInterval)
+        end
     mSliderBtn.MouseButton1Down:Connect(function() draggingMergeSlider=true end)
     mSliderBtn.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch then draggingMergeSlider=true end end)
     mSliderBg.InputBegan:Connect(function(i)
@@ -1234,6 +1246,22 @@ do
         if not draggingMergeSlider then return end
         if i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch then
             updateMergeSlider(i.Position.X)
+        end
+    end)
+
+    mergeSpeedBox.FocusLost:Connect(function(enterPressed)
+        if not enterPressed then mergeSpeedBox.Text=string.format("%.3f",_G.AutoMergerInterval) return end
+        local v=tonumber(mergeSpeedBox.Text)
+        if v and v > 0 then
+            v=math.clamp(v,0.001,60)
+            _G.AutoMergerInterval=v
+            local rel=math.clamp((v-mMinI)/(mMaxI-mMinI),0,1)
+            mSliderFill.Size=UDim2.new(rel,0,1,0)
+            mSliderBtn.Position=UDim2.new(rel,0,0.5,0)
+            mergeSpeedBox.Text=string.format("%.3f",v)
+            saveSettings()
+        else
+            mergeSpeedBox.Text=string.format("%.3f",_G.AutoMergerInterval)
         end
     end)
 
@@ -1317,8 +1345,23 @@ do
         tierBtns[tier]=tb
     end
 
-    mkBH(184, "OPEN INTERVAL")
+    mkBH(184, "OPEN INTERVAL  (type or slide)")
 
+    if not _G.AutoBoxInterval then _G.AutoBoxInterval = 0.001 end
+    local speedBox=Instance.new("TextBox")
+    speedBox.Size=UDim2.new(0,80,0,20)
+    speedBox.Position=UDim2.new(1,-pad-80,0,180)
+    speedBox.BackgroundColor3=Color3.fromRGB(35,35,45)
+    speedBox.BorderSizePixel=0
+    speedBox.Font=Enum.Font.GothamBold
+    speedBox.TextSize=11
+    speedBox.TextColor3=Color3.fromRGB(200,180,255)
+    speedBox.PlaceholderText="e.g. 0.001"
+    speedBox.PlaceholderColor3=Color3.fromRGB(90,90,90)
+    speedBox.Text=string.format("%.3f", _G.AutoBoxInterval)
+    speedBox.ClearTextOnFocus=false
+    speedBox.Parent=boxesPanel
+    Instance.new("UICorner",speedBox).CornerRadius=UDim.new(0,5)
     local speedLbl=Instance.new("TextLabel")
     speedLbl.Size=UDim2.new(0,50,0,16)
     speedLbl.Position=UDim2.new(1,-pad-50,0,182)
@@ -1327,8 +1370,8 @@ do
     speedLbl.TextSize=11
     speedLbl.TextColor3=Color3.fromRGB(255,255,255)
     speedLbl.TextXAlignment=Enum.TextXAlignment.Right
-    if not _G.AutoBoxInterval then _G.AutoBoxInterval = 0.01 end
-    speedLbl.Text=string.format("%.2fs", _G.AutoBoxInterval)
+    speedLbl.Text=string.format("%.3fs", _G.AutoBoxInterval)
+    speedLbl.Visible=false
     speedLbl.Parent=boxesPanel
 
     local sliderBg=Instance.new("Frame")
@@ -1340,7 +1383,7 @@ do
     sliderBg.Parent=boxesPanel
     Instance.new("UICorner",sliderBg).CornerRadius=UDim.new(1,0)
 
-    local minI,maxI=0.01,5
+    local minI,maxI=0.001,5
     local function pctFromInterval(v) return math.clamp((v-minI)/(maxI-minI),0,1) end
 
     local sliderFill=Instance.new("Frame")
@@ -1367,8 +1410,24 @@ do
         _G.AutoBoxInterval = minI + rel*(maxI-minI)
         sliderFill.Size=UDim2.new(rel,0,1,0)
         sliderBtn.Position=UDim2.new(rel,0,0.5,0)
-        speedLbl.Text=string.format("%.2fs", _G.AutoBoxInterval)
+        speedLbl.Text=string.format("%.3fs", _G.AutoBoxInterval)
+        speedBox.Text=string.format("%.3f", _G.AutoBoxInterval)
     end
+    speedBox.FocusLost:Connect(function(enterPressed)
+        if not enterPressed then speedBox.Text=string.format("%.3f", _G.AutoBoxInterval) return end
+        local v=tonumber(speedBox.Text)
+        if v and v > 0 then
+            v=math.clamp(v,0.001,60)
+            _G.AutoBoxInterval=v
+            local rel=math.clamp((v-minI)/(maxI-minI),0,1)
+            sliderFill.Size=UDim2.new(rel,0,1,0)
+            sliderBtn.Position=UDim2.new(rel,0,0.5,0)
+            speedBox.Text=string.format("%.3f", v)
+            saveSettings()
+        else
+            speedBox.Text=string.format("%.3f", _G.AutoBoxInterval)
+        end
+    end)
     sliderBtn.MouseButton1Down:Connect(function() draggingSlider=true end)
     sliderBtn.InputBegan:Connect(function(input)
         if input.UserInputType==Enum.UserInputType.Touch then draggingSlider=true end
@@ -1415,7 +1474,7 @@ do
             else
                 targetLbl.Text = "Targeting: none affordable"
             end
-            task.wait(_G.AutoBoxInterval or 0.01)
+            task.wait(_G.AutoBoxInterval or 0.001)
         end
     end)
 
