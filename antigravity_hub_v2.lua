@@ -270,11 +270,12 @@ _G.AutoBoxTiers = {
 }
 _G.AutoMergerEnabled = lB(_svStr, "autoMerger", false)
 _G.AutoMergerInterval = lN(_svStr, "autoMergerInterval", 0.3)
+_G.SoulCollectInterval = lN(_svStr, "soulCollectInterval", 1)
 local function saveSettings()
     local at = _G.ActiveTrainer and ('"' .. _G.ActiveTrainer .. '"') or "null"
     local et = enabledTargets
     local json = string.format(
-        '{"activeTrainer":%s,"autoRespawn":%s,"arTeleportBack":%s,"autoQuest":%s,"autoEquip":%s,"autoBox":%s,"teleportMode":%s,"antiIdle":%s,"nukerRunning":%s,"autoSkipWeak":%s,"priorityMode":%s,"jfEnabled":%s,"fsAutoClick":%s,"Noob":%s,"Thug":%s,"Mafia":%s,"WereWolf":%s,"Robot":%s,"Sath":%s,"Phantom":%s,"autoBoxInterval":%s,"autoRoll":%s,"boxTier1":%s,"boxTier2":%s,"boxTier3":%s,"boxTier4":%s,"autoMerger":%s,"autoMergerInterval":%s}',
+        '{"activeTrainer":%s,"autoRespawn":%s,"arTeleportBack":%s,"autoQuest":%s,"autoEquip":%s,"autoBox":%s,"teleportMode":%s,"antiIdle":%s,"nukerRunning":%s,"autoSkipWeak":%s,"priorityMode":%s,"jfEnabled":%s,"fsAutoClick":%s,"Noob":%s,"Thug":%s,"Mafia":%s,"WereWolf":%s,"Robot":%s,"Sath":%s,"Phantom":%s,"autoBoxInterval":%s,"autoRoll":%s,"boxTier1":%s,"boxTier2":%s,"boxTier3":%s,"boxTier4":%s,"autoMerger":%s,"autoMergerInterval":%s,"soulCollectInterval":%s}',
         at,
         tostring(_G.AutoRespawnEnabled),
         tostring(_G.ARTeleportBack),
@@ -302,7 +303,8 @@ local function saveSettings()
         tostring(_G.AutoBoxTiers and _G.AutoBoxTiers.Tier3 == true),
         tostring(_G.AutoBoxTiers and _G.AutoBoxTiers.Tier4 == true),
         tostring(_G.AutoMergerEnabled == true),
-        tostring(_G.AutoMergerInterval or 0.1)
+        tostring(_G.AutoMergerInterval or 0.1),
+        tostring(_G.SoulCollectInterval or 1)
     )
     local ok, err = pcall(function() if writefile then writefile(SETTINGS_FILE, json) end end)
     if not ok then warn("[Settings] Save failed: " .. tostring(err)) end
@@ -1075,6 +1077,178 @@ end)
 if _G.AutoRollEnabled then
     startAutoRoll()
 end
+
+local soulBtn = mkWToggle(112,"💀 Soul Collect: Off")
+local soulInfoLbl = mkWL(144,"👻 Souls: --",Color3.fromRGB(140,140,160))
+
+if not _G.SoulCollectInterval then _G.SoulCollectInterval = 1 end
+local soulSpeedBox=Instance.new("TextBox")
+soulSpeedBox.Size=UDim2.new(0,80,0,20)
+soulSpeedBox.Position=UDim2.new(1,-pad-80,0,168)
+soulSpeedBox.BackgroundColor3=Color3.fromRGB(35,35,45)
+soulSpeedBox.BorderSizePixel=0
+soulSpeedBox.Font=Enum.Font.GothamBold
+soulSpeedBox.TextSize=11
+soulSpeedBox.TextColor3=Color3.fromRGB(200,180,255)
+soulSpeedBox.PlaceholderText="e.g. 1.0"
+soulSpeedBox.PlaceholderColor3=Color3.fromRGB(90,90,90)
+soulSpeedBox.Text=string.format("%.3f", _G.SoulCollectInterval)
+soulSpeedBox.ClearTextOnFocus=false
+soulSpeedBox.Parent=worldPanel
+Instance.new("UICorner",soulSpeedBox).CornerRadius=UDim.new(0,5)
+local soulSpeedLbl=Instance.new("TextLabel")
+soulSpeedLbl.Size=UDim2.new(0,50,0,16)
+soulSpeedLbl.Position=UDim2.new(1,-pad-50,0,170)
+soulSpeedLbl.BackgroundTransparency=1
+soulSpeedLbl.Font=Enum.Font.GothamBold
+soulSpeedLbl.TextSize=11
+soulSpeedLbl.TextColor3=Color3.fromRGB(255,255,255)
+soulSpeedLbl.TextXAlignment=Enum.TextXAlignment.Right
+soulSpeedLbl.Text=string.format("%.3fs", _G.SoulCollectInterval)
+soulSpeedLbl.Visible=false
+soulSpeedLbl.Parent=worldPanel
+
+local soulSliderBg=Instance.new("Frame")
+soulSliderBg.Size=UDim2.new(1,-pad*2,0,6)
+soulSliderBg.Position=UDim2.new(0,pad,0,192)
+soulSliderBg.BackgroundColor3=Color3.fromRGB(55,55,55)
+soulSliderBg.BorderSizePixel=0
+soulSliderBg.Active=true
+soulSliderBg.Parent=worldPanel
+Instance.new("UICorner",soulSliderBg).CornerRadius=UDim.new(1,0)
+
+local soulMinI,soulMaxI=0.05,1
+local function soulPctFromInterval(v) return math.clamp((v-soulMinI)/(soulMaxI-soulMinI),0,1) end
+
+local soulSliderFill=Instance.new("Frame")
+soulSliderFill.Size=UDim2.new(soulPctFromInterval(_G.SoulCollectInterval),0,1,0)
+soulSliderFill.BackgroundColor3=Color3.fromRGB(120,90,200)
+soulSliderFill.BorderSizePixel=0
+soulSliderFill.Parent=soulSliderBg
+Instance.new("UICorner",soulSliderFill).CornerRadius=UDim.new(1,0)
+
+local soulSliderBtn=Instance.new("TextButton")
+soulSliderBtn.Size=UDim2.new(0,14,0,14)
+soulSliderBtn.AnchorPoint=Vector2.new(0.5,0.5)
+soulSliderBtn.Position=UDim2.new(soulPctFromInterval(_G.SoulCollectInterval),0,0.5,0)
+soulSliderBtn.BackgroundColor3=Color3.fromRGB(200,180,255)
+soulSliderBtn.BorderSizePixel=0
+soulSliderBtn.Text=""
+soulSliderBtn.Parent=soulSliderBg
+Instance.new("UICorner",soulSliderBtn).CornerRadius=UDim.new(1,0)
+
+local function soulUpdateSliderFromX(x)
+    local rel=(x - soulSliderBg.AbsolutePosition.X)/soulSliderBg.AbsoluteSize.X
+    rel=math.clamp(rel,0,1)
+    _G.SoulCollectInterval = soulMinI + rel*(soulMaxI-soulMinI)
+    soulSliderFill.Size=UDim2.new(rel,0,1,0)
+    soulSliderBtn.Position=UDim2.new(rel,0,0.5,0)
+    soulSpeedLbl.Text=string.format("%.3fs", _G.SoulCollectInterval)
+    soulSpeedBox.Text=string.format("%.3f", _G.SoulCollectInterval)
+end
+soulSpeedBox.FocusLost:Connect(function(enterPressed)
+    if not enterPressed then soulSpeedBox.Text=string.format("%.3f", _G.SoulCollectInterval) return end
+    local v=tonumber(soulSpeedBox.Text)
+    if v and v > 0 then
+        v=math.clamp(v,0.05,1)
+        _G.SoulCollectInterval=v
+        local rel=math.clamp((v-soulMinI)/(soulMaxI-soulMinI),0,1)
+        soulSliderFill.Size=UDim2.new(rel,0,1,0)
+        soulSliderBtn.Position=UDim2.new(rel,0,0.5,0)
+        soulSpeedBox.Text=string.format("%.3f", v)
+        saveSettings()
+    else
+        soulSpeedBox.Text=string.format("%.3f", _G.SoulCollectInterval)
+    end
+end)
+local UIS = game:GetService("UserInputService")
+soulSliderBtn.MouseButton1Down:Connect(function() draggingSlider=true end)
+soulSliderBtn.InputBegan:Connect(function(input)
+    if input.UserInputType==Enum.UserInputType.Touch then draggingSlider=true end
+end)
+soulSliderBg.InputBegan:Connect(function(input)
+    if input.UserInputType==Enum.UserInputType.Touch then
+        draggingSlider=true
+        soulUpdateSliderFromX(input.Position.X)
+    end
+end)
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if draggingSlider then saveSettings() end
+        draggingSlider=false
+    end
+end)
+UIS.InputChanged:Connect(function(input)
+    if not draggingSlider then return end
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        soulUpdateSliderFromX(input.Position.X)
+    end
+end)
+
+
+_G.SoulCollectEnabled = false
+local _soulConn = nil
+
+local function stopSoulCollect()
+    _G.SoulCollectEnabled = false
+    if _soulConn then _soulConn:Disconnect(); _soulConn = nil end
+    soulBtn.Text = "💀 Soul Collect: Off"
+    TweenService:Create(soulBtn,TweenInfo.new(0.15),{BackgroundColor3=Color3.fromRGB(55,55,55)}):Play()
+    soulBtn.TextColor3 = Color3.fromRGB(110,110,110)
+end
+
+local function startSoulCollect()
+    _G.SoulCollectEnabled = true
+    soulBtn.Text = "💀 Soul Collect: On"
+    TweenService:Create(soulBtn,TweenInfo.new(0.15),{BackgroundColor3=Color3.fromRGB(40,120,60)}):Play()
+    soulBtn.TextColor3 = Color3.fromRGB(255,255,255)
+
+    local startSouls = LP:GetAttribute("Souls") or 0
+    soulInfoLbl.Text = "👻 Souls: " .. fmtNum(startSouls)
+
+    if _soulConn then _soulConn:Disconnect() end
+    _soulConn = track(LP:GetAttributeChangedSignal("Souls"):Connect(function()
+        local cur = LP:GetAttribute("Souls") or 0
+        soulInfoLbl.Text = "👻 Souls: " .. fmtNum(cur)
+    end))
+
+    task.spawn(function()
+        while _G.SoulCollectEnabled and hubAlive do
+            local char = LP.Character
+            local shrp = char and char:FindFirstChild("HumanoidRootPart")
+            local orbFolder = workspace:FindFirstChild("SoulOrbs")
+
+            if shrp and orbFolder then
+                local active = {}
+                for _, orb in ipairs(orbFolder:GetChildren()) do
+                    if orb:IsA("BasePart") and orb.Transparency == 0 then
+                        table.insert(active, orb)
+                    end
+                end
+
+                if #active > 0 then
+                    local nearest, nearestDist = nil, math.huge
+                    for _, orb in ipairs(active) do
+                        local d = (orb.Position - shrp.Position).Magnitude
+                        if d < nearestDist then
+                            nearest, nearestDist = orb, d
+                        end
+                    end
+                    if nearest and nearest.Parent then
+                        shrp.CFrame = CFrame.new(nearest.Position)
+                        task.wait(_G.SoulCollectInterval or 1)
+                    end
+                end
+            end
+
+            task.wait(_G.SoulCollectInterval or 1)
+        end
+    end)
+end
+
+soulBtn.MouseButton1Click:Connect(function()
+    if _G.SoulCollectEnabled then stopSoulCollect() else startSoulCollect() end
+end)
 end -- WORLD PANEL
 -- BOXES PANEL
 do
